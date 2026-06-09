@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/qscan" },
+    { "path": "packages/mcp" },
+    { "path": "packages/action" },
+    { "path": "packages/sieve" }
+  ]
+}

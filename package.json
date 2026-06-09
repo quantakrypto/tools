@@ -1,0 +1,31 @@
+{
+  "name": "qproof-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Open-source post-quantum readiness tooling by qproof — scanner, MCP server, conformance battery, and CI action.",
+  "license": "Apache-2.0",
+  "homepage": "https://qproof.com/tools",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dandelionlabs-io/qproof-tools.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "typecheck": "tsc --build",
+    "test": "npm run test --workspaces --if-present",
+    "qscan": "node --import tsx packages/qscan/src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

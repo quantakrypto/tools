@@ -1,0 +1,26 @@
+{
+  "name": "@qproof/qscan",
+  "version": "0.1.0",
+  "description": "qScan — find quantum-vulnerable cryptography in any codebase (CLI). Zero runtime dependencies.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "qscan": "./dist/cli.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" },
+  "dependencies": {
+    "@qproof/core": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}
