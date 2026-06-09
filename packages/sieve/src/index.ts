@@ -22,14 +22,15 @@ import { isParamSet, sizesFor, type ParamSet } from "./sizes.js";
 
 export type { SieveReport, CategoryCounts } from "./report.js";
 export type { CategoryResult, Check, Status, BugClass } from "./categories/types.js";
-export type { ParamSet, Family, Sizes, KemSizes, DsaSizes } from "./sizes.js";
-export type { Request, Response } from "./protocol.js";
+export type { ParamSet, Family, Sizes, KemSizes, DsaSizes, SlhDsaSizes, SignatureSizes } from "./sizes.js";
+export type { Request, Response, SignatureFamily } from "./protocol.js";
 
-export { PARAM_SETS, isParamSet, sizesFor } from "./sizes.js";
+export { PARAM_SETS, isParamSet, sizesFor, asKemSizes, asDsaSizes, asSlhDsaSizes, asSignatureSizes } from "./sizes.js";
 export { CATEGORIES, categoriesFor } from "./categories/index.js";
 export { buildReport, formatHuman, formatJson, overallVerdict } from "./report.js";
 export { encodeRequest, decodeResponse, ProtocolError, PROTOCOL_VERSION, toB64, fromB64 } from "./protocol.js";
-export { Runner, TimeoutError, SutCrashError } from "./runner.js";
+export { Runner, TimeoutError, SutCrashError, buildSutEnv, DEFAULT_ENV_ALLOWLIST } from "./runner.js";
+export type { RunnerOptions } from "./runner.js";
 export { loadVectors } from "./vectors.js";
 export type { Vector, VectorSet } from "./vectors.js";
 
@@ -49,8 +50,22 @@ export interface RunSieveOptions {
   timing?: boolean;
   /** Working directory for the SUT. */
   cwd?: string;
-  /** Extra env for the SUT. */
+  /** Extra env for the SUT (layered over the scrubbed minimal env). */
   env?: Record<string, string>;
+  /**
+   * Inherit the full parent environment instead of the scrubbed minimal env.
+   * Default `false` — the SUT is untrusted code. See security.md Q-17.
+   */
+  inheritEnv?: boolean;
+  /** Extra env variable names to copy from the parent env into the SUT's env. */
+  envAllowlist?: readonly string[];
+  /**
+   * Max concurrent in-flight requests per SUT process for categories that issue
+   * many INDEPENDENT requests (correctness/determinism iterations). Default 16.
+   * Set to 1 for strictly serial behavior. The id-correlated protocol keeps
+   * dependent ops ordered; see docs/audits/performance.md §7.1.
+   */
+  pipelineDepth?: number;
   /** Restrict to these category names (default: all applicable). */
   only?: readonly string[];
 }
@@ -73,7 +88,10 @@ export async function runSieve(opts: RunSieveOptions): Promise<SieveReport> {
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
     ...(opts.cwd ? { cwd: opts.cwd } : {}),
     ...(opts.env ? { env: opts.env } : {}),
+    ...(opts.inheritEnv !== undefined ? { inheritEnv: opts.inheritEnv } : {}),
+    ...(opts.envAllowlist ? { envAllowlist: opts.envAllowlist } : {}),
   });
+  const pipelineDepth = opts.pipelineDepth ?? 16;
 
   const results: CategoryResult[] = [];
   try {
@@ -88,6 +106,7 @@ export async function runSieve(opts: RunSieveOptions): Promise<SieveReport> {
           runner,
           sizes,
           iterations,
+          pipelineDepth,
           ...(opts.vectorsDir ? { vectorsDir: opts.vectorsDir } : {}),
         });
         results.push(res);

@@ -1,13 +1,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isParamSet, PARAM_SETS, sizesFor, asKemSizes, asDsaSizes } from "../src/sizes.js";
+import { isParamSet, PARAM_SETS, sizesFor, asKemSizes, asDsaSizes, asSlhDsaSizes } from "../src/sizes.js";
 
-test("PARAM_SETS lists all six standardized sets", () => {
-  assert.deepEqual(
-    [...PARAM_SETS].sort(),
-    ["ml-dsa-44", "ml-dsa-65", "ml-dsa-87", "ml-kem-1024", "ml-kem-512", "ml-kem-768"],
-  );
+test("PARAM_SETS lists the ML-KEM, ML-DSA, and SLH-DSA standardized sets", () => {
+  assert.deepEqual([...PARAM_SETS].sort(), [
+    "ml-dsa-44",
+    "ml-dsa-65",
+    "ml-dsa-87",
+    "ml-kem-1024",
+    "ml-kem-512",
+    "ml-kem-768",
+    "slh-dsa-sha2-128f",
+    "slh-dsa-sha2-128s",
+    "slh-dsa-sha2-192f",
+    "slh-dsa-sha2-192s",
+    "slh-dsa-sha2-256f",
+    "slh-dsa-sha2-256s",
+    "slh-dsa-shake-128f",
+    "slh-dsa-shake-128s",
+    "slh-dsa-shake-192f",
+    "slh-dsa-shake-192s",
+    "slh-dsa-shake-256f",
+    "slh-dsa-shake-256s",
+  ]);
 });
 
 test("isParamSet narrows known/unknown ids", () => {
@@ -45,9 +61,37 @@ test("ML-DSA sizes match FIPS 204 Table 2", () => {
   assert.deepEqual({ pk: d87!.publicKey, sk: d87!.secretKey, sig: d87!.signature }, { pk: 2592, sk: 4896, sig: 4627 });
 });
 
-test("asKemSizes / asDsaSizes discriminate families", () => {
+test("SLH-DSA sizes match FIPS 205 Table 2 (pk=2n, sk=4n, sig per set)", () => {
+  // Public, standardized sizes; SHA2 and SHAKE variants of a level/var match.
+  const expect: Record<string, { pk: number; sk: number; sig: number }> = {
+    "slh-dsa-sha2-128s": { pk: 32, sk: 64, sig: 7856 },
+    "slh-dsa-shake-128s": { pk: 32, sk: 64, sig: 7856 },
+    "slh-dsa-sha2-128f": { pk: 32, sk: 64, sig: 17088 },
+    "slh-dsa-shake-128f": { pk: 32, sk: 64, sig: 17088 },
+    "slh-dsa-sha2-192s": { pk: 48, sk: 96, sig: 16224 },
+    "slh-dsa-shake-192s": { pk: 48, sk: 96, sig: 16224 },
+    "slh-dsa-sha2-192f": { pk: 48, sk: 96, sig: 35664 },
+    "slh-dsa-shake-192f": { pk: 48, sk: 96, sig: 35664 },
+    "slh-dsa-sha2-256s": { pk: 64, sk: 128, sig: 29792 },
+    "slh-dsa-shake-256s": { pk: 64, sk: 128, sig: 29792 },
+    "slh-dsa-sha2-256f": { pk: 64, sk: 128, sig: 49856 },
+    "slh-dsa-shake-256f": { pk: 64, sk: 128, sig: 49856 },
+  };
+  for (const [id, exp] of Object.entries(expect)) {
+    const s = asSlhDsaSizes(sizesFor(id as never));
+    assert.ok(s, `expected an SLH-DSA size record for ${id}`);
+    assert.deepEqual({ pk: s!.publicKey, sk: s!.secretKey, sig: s!.signature }, exp, id);
+    // Structural invariants: pk = 2n, sk = 4n.
+    assert.equal(s!.secretKey, s!.publicKey * 2, `${id}: sk should be 2*pk (=4n)`);
+  }
+});
+
+test("asKemSizes / asDsaSizes / asSlhDsaSizes discriminate families", () => {
   assert.equal(asDsaSizes(sizesFor("ml-kem-768")), undefined);
   assert.equal(asKemSizes(sizesFor("ml-dsa-65")), undefined);
+  assert.equal(asSlhDsaSizes(sizesFor("ml-dsa-65")), undefined);
+  assert.equal(asDsaSizes(sizesFor("slh-dsa-sha2-128f")), undefined);
+  assert.ok(asSlhDsaSizes(sizesFor("slh-dsa-sha2-128f")));
 });
 
 test("sizesFor throws on unknown set", () => {

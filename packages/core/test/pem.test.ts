@@ -51,7 +51,38 @@ test("X.509 certificate is low severity, not HNDL", () => {
   assert.equal(f.hndl, false);
 });
 
+test("DSA private key PEM is detected (C7)", () => {
+  const content = "-----BEGIN DSA PRIVATE KEY-----\nabc\n-----END DSA PRIVATE KEY-----\n";
+  const f = run("dsa.pem", content).find((x) => x.ruleId === "pem-dsa-private-key");
+  assert.ok(f);
+  assert.equal(f.algorithm, "DSA");
+  assert.equal(f.severity, "critical");
+});
+
+test("PGP private key block and message are detected (C7)", () => {
+  const priv = run(
+    "secret.asc",
+    "-----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK-----\n",
+  ).find((x) => x.ruleId === "pem-pgp-private-key");
+  assert.ok(priv);
+  assert.equal(priv.severity, "critical");
+  assert.equal(priv.hndl, true);
+
+  const msg = run("m.asc", "-----BEGIN PGP MESSAGE-----\nx\n-----END PGP MESSAGE-----\n").find(
+    (x) => x.ruleId === "pem-pgp-message",
+  );
+  assert.ok(msg);
+  assert.equal(msg.hndl, true);
+});
+
+test("every PEM finding carries a CWE id", () => {
+  const content = "-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----\n";
+  for (const f of run("k.pem", content)) {
+    if (f.ruleId.startsWith("pem-")) assert.ok(f.cwe, `${f.ruleId} has a CWE`);
+  }
+});
+
 test("non-PEM files produce no PEM findings", () => {
   const findings = run("readme.md", "Just some text, no keys here.");
-  assert.equal(findings.filter((f) => f.category === "certificate").length, 0);
+  assert.equal(findings.filter((f) => f.ruleId.startsWith("pem-")).length, 0);
 });

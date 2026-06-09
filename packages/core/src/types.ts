@@ -32,6 +32,7 @@ export type AlgorithmFamily =
   | "DH"
   | "DSA"
   | "X25519"
+  | "X448"
   | "ECIES"
   | "unknown";
 
@@ -65,6 +66,8 @@ export interface Finding {
   message: string;
   /** Suggested post-quantum remediation (e.g. ML-KEM, hybrid X25519MLKEM768). */
   remediation?: string;
+  /** Associated CWE identifier, e.g. "CWE-327" (broken crypto), "CWE-326" (weak strength). */
+  cwe?: string;
   location: SourceLocation;
 }
 
@@ -80,12 +83,35 @@ export interface VulnerableDependency {
   severity: Severity;
 }
 
+/**
+ * Which logical scope a detector belongs to. Drives the source/config scope
+ * toggles in {@link ScanOptions} (replacing the old ruleId-prefix inference).
+ */
+export type DetectorScope = "source" | "config";
+
+/**
+ * The programming language / surface a detector targets. `"any"` means the
+ * detector is language-agnostic (e.g. PEM material, config files).
+ */
+export type DetectorLanguage = "js" | "python" | "go" | "java" | "any";
+
 /** A pluggable source detector. Detectors are pure and stateless. */
 export interface Detector {
   /** Unique id, used as the Finding.ruleId prefix space. */
   id: string;
   /** Human description of what the detector looks for. */
   description: string;
+  /**
+   * Logical scope of this detector's findings. Used by `scan()` to honour the
+   * `config` / `source` toggles. Defaults to `"source"` when omitted (for
+   * backward compatibility with externally-defined detectors).
+   */
+  scope?: DetectorScope;
+  /**
+   * Language this detector targets, for documentation / registry filtering.
+   * Defaults to `"js"` when omitted.
+   */
+  language?: DetectorLanguage;
   /** Whether this detector should run against the given file path. */
   appliesTo(filePath: string): boolean;
   /** Inspect a single file's contents and return zero or more findings. */
@@ -103,7 +129,11 @@ export interface DetectorInput {
 export interface ScanOptions {
   /** Absolute or relative directory (or single file) to scan. */
   root: string;
-  /** Extra glob-ish include patterns (substring/relative-prefix match). */
+  /**
+   * Restrict the walk to paths matching one of these include patterns
+   * (substring or relative-path-prefix match). When omitted, all non-excluded
+   * files are scanned. Wired into the walker.
+   */
   include?: string[];
   /** Extra exclude patterns (in addition to the built-in defaults). */
   exclude?: string[];
@@ -117,8 +147,43 @@ export interface ScanOptions {
   config?: boolean;
   /** Max file size to read, in bytes. Default: 2 MiB. */
   maxFileSize?: number;
+  /**
+   * Scan minified / generated / bundled files (large single-line content)
+   * instead of skipping them. Default: false (skip them for speed).
+   */
+  scanMinified?: boolean;
+  /**
+   * Explicit relative file list (POSIX, relative to `root`) to scan instead of
+   * walking the tree. Used for incremental / changed-files scans. Each path is
+   * still subject to the binary / size filters. When set, the directory walk is
+   * bypassed entirely.
+   */
+  files?: string[];
+  /**
+   * Override / extend the built-in detector set. When omitted, the default
+   * registry's detectors are used.
+   */
+  detectors?: Detector[];
   /** Optional progress callback. */
   onFile?: (file: string) => void;
+}
+
+/** Extra options for {@link scanParallel}, layered onto {@link ScanOptions}. */
+export interface ParallelScanOptions extends ScanOptions {
+  /**
+   * Number of worker threads. Default: `os.availableParallelism()`. A value of
+   * 0 or 1 forces the in-process serial path.
+   */
+  concurrency?: number;
+  /**
+   * Combined-size floor (bytes) below which the scan always runs in-process.
+   * Default: 2 MiB. Also stays serial below `parallelFileThreshold` files.
+   */
+  parallelThresholdBytes?: number;
+  /** File-count floor below which the scan always runs in-process. Default: 200. */
+  parallelFileThreshold?: number;
+  /** Target bytes per worker chunk. Default: 4 MiB. */
+  chunkBytes?: number;
 }
 
 /** Aggregated counts produced from a scan's findings. */

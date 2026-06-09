@@ -90,7 +90,7 @@ const SYMBOL: Record<Status, string> = { pass: "PASS", fail: "FAIL", skip: "SKIP
 /** Human-readable terminal rendering (no color codes; CI-friendly). */
 export function formatHuman(report: SieveReport): string {
   const lines: string[] = [];
-  lines.push(`sieve — ML-KEM/ML-DSA conformance battery`);
+  lines.push(`sieve — ML-KEM/ML-DSA/SLH-DSA conformance battery`);
   lines.push(`  param      : ${report.param}`);
   lines.push(`  impl       : ${report.impl.join(" ")}`);
   lines.push(`  iterations : ${report.iterations}`);

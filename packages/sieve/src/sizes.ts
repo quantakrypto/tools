@@ -1,5 +1,6 @@
 /**
- * Public parameter-size tables for ML-KEM (FIPS 203) and ML-DSA (FIPS 204).
+ * Public parameter-size tables for ML-KEM (FIPS 203), ML-DSA (FIPS 204), and
+ * SLH-DSA (FIPS 205).
  *
  * These are the ONLY hard-coded cryptographic constants in Sieve. They are
  * public, standardized byte lengths — not secret Known-Answer-Test values.
@@ -8,12 +9,17 @@
  * themselves.
  *
  * Sources:
- *   - ML-KEM:  NIST FIPS 203, Table 3 (sizes of key/ciphertext byte strings).
- *   - ML-DSA:  NIST FIPS 204, Table 2 (sizes of key/signature byte strings).
+ *   - ML-KEM:   NIST FIPS 203, Table 3 (sizes of key/ciphertext byte strings).
+ *   - ML-DSA:   NIST FIPS 204, Table 2 (sizes of key/signature byte strings).
+ *   - SLH-DSA:  NIST FIPS 205, Table 2 (parameter sets) — pk = 2n, sk = 4n,
+ *               signature lengths per set. The 12 standardized sets pair each of
+ *               six (security level × s/f) combinations with a SHA2 or SHAKE
+ *               hash; the public sizes depend only on the level×s/f, so the
+ *               SHA2 and SHAKE variants share sizes.
  */
 
 /** Algorithm families Sieve knows how to drive. */
-export type Family = "ml-kem" | "ml-dsa";
+export type Family = "ml-kem" | "ml-dsa" | "slh-dsa";
 
 /** Canonical parameter-set identifiers accepted on the CLI / API. */
 export type ParamSet =
@@ -22,7 +28,19 @@ export type ParamSet =
   | "ml-kem-1024"
   | "ml-dsa-44"
   | "ml-dsa-65"
-  | "ml-dsa-87";
+  | "ml-dsa-87"
+  | "slh-dsa-sha2-128s"
+  | "slh-dsa-shake-128s"
+  | "slh-dsa-sha2-128f"
+  | "slh-dsa-shake-128f"
+  | "slh-dsa-sha2-192s"
+  | "slh-dsa-shake-192s"
+  | "slh-dsa-sha2-192f"
+  | "slh-dsa-shake-192f"
+  | "slh-dsa-sha2-256s"
+  | "slh-dsa-shake-256s"
+  | "slh-dsa-sha2-256f"
+  | "slh-dsa-shake-256f";
 
 /** Byte sizes for an ML-KEM parameter set (FIPS 203, Table 3). */
 export interface KemSizes {
@@ -50,8 +68,23 @@ export interface DsaSizes {
   readonly signature: number;
 }
 
-/** Union of the two size shapes. */
-export type Sizes = KemSizes | DsaSizes;
+/** Byte sizes for an SLH-DSA parameter set (FIPS 205, Table 2). */
+export interface SlhDsaSizes {
+  readonly family: "slh-dsa";
+  readonly id: ParamSet;
+  /** Verification (public) key length in bytes (= 2·n). */
+  readonly publicKey: number;
+  /** Signing (secret) key length in bytes (= 4·n). */
+  readonly secretKey: number;
+  /** Signature length in bytes. */
+  readonly signature: number;
+}
+
+/** Union of the size shapes. */
+export type Sizes = KemSizes | DsaSizes | SlhDsaSizes;
+
+/** A signature-family size record (ML-DSA or SLH-DSA). */
+export type SignatureSizes = DsaSizes | SlhDsaSizes;
 
 /**
  * The size table. Values are public, standardized constants.
@@ -67,6 +100,16 @@ export type Sizes = KemSizes | DsaSizes;
  *   44         1312   2560   2420
  *   65         1952   4032   3309
  *   87         2592   4896   4627
+ *
+ * SLH-DSA (FIPS 205, Table 2): pk = 2n, sk = 4n; signature length per set.
+ *   level/var  n    pk    sk     sig
+ *   128s       16   32    64     7856
+ *   128f       16   32    64     17088
+ *   192s       24   48    96     16224
+ *   192f       24   48    96     35664
+ *   256s       32   64    128    29792
+ *   256f       32   64    128    49856
+ * (SHA2 and SHAKE variants of a given level/var share these public sizes.)
  */
 const TABLE: Readonly<Record<ParamSet, Sizes>> = {
   "ml-kem-512": {
@@ -114,6 +157,20 @@ const TABLE: Readonly<Record<ParamSet, Sizes>> = {
     secretKey: 4896,
     signature: 4627,
   },
+
+  // SLH-DSA (FIPS 205, Table 2). SHA2 and SHAKE share sizes per level/variant.
+  "slh-dsa-sha2-128s": { family: "slh-dsa", id: "slh-dsa-sha2-128s", publicKey: 32, secretKey: 64, signature: 7856 },
+  "slh-dsa-shake-128s": { family: "slh-dsa", id: "slh-dsa-shake-128s", publicKey: 32, secretKey: 64, signature: 7856 },
+  "slh-dsa-sha2-128f": { family: "slh-dsa", id: "slh-dsa-sha2-128f", publicKey: 32, secretKey: 64, signature: 17088 },
+  "slh-dsa-shake-128f": { family: "slh-dsa", id: "slh-dsa-shake-128f", publicKey: 32, secretKey: 64, signature: 17088 },
+  "slh-dsa-sha2-192s": { family: "slh-dsa", id: "slh-dsa-sha2-192s", publicKey: 48, secretKey: 96, signature: 16224 },
+  "slh-dsa-shake-192s": { family: "slh-dsa", id: "slh-dsa-shake-192s", publicKey: 48, secretKey: 96, signature: 16224 },
+  "slh-dsa-sha2-192f": { family: "slh-dsa", id: "slh-dsa-sha2-192f", publicKey: 48, secretKey: 96, signature: 35664 },
+  "slh-dsa-shake-192f": { family: "slh-dsa", id: "slh-dsa-shake-192f", publicKey: 48, secretKey: 96, signature: 35664 },
+  "slh-dsa-sha2-256s": { family: "slh-dsa", id: "slh-dsa-sha2-256s", publicKey: 64, secretKey: 128, signature: 29792 },
+  "slh-dsa-shake-256s": { family: "slh-dsa", id: "slh-dsa-shake-256s", publicKey: 64, secretKey: 128, signature: 29792 },
+  "slh-dsa-sha2-256f": { family: "slh-dsa", id: "slh-dsa-sha2-256f", publicKey: 64, secretKey: 128, signature: 49856 },
+  "slh-dsa-shake-256f": { family: "slh-dsa", id: "slh-dsa-shake-256f", publicKey: 64, secretKey: 128, signature: 49856 },
 };
 
 /** All known parameter-set identifiers, in canonical order. */
@@ -145,4 +202,17 @@ export function asKemSizes(s: Sizes): KemSizes | undefined {
 /** Narrowing helper: DSA size record or `undefined`. */
 export function asDsaSizes(s: Sizes): DsaSizes | undefined {
   return s.family === "ml-dsa" ? s : undefined;
+}
+
+/** Narrowing helper: SLH-DSA size record or `undefined`. */
+export function asSlhDsaSizes(s: Sizes): SlhDsaSizes | undefined {
+  return s.family === "slh-dsa" ? s : undefined;
+}
+
+/**
+ * Narrowing helper: any signature-family size record (ML-DSA or SLH-DSA) or
+ * `undefined`. Both expose `publicKey`, `secretKey`, and `signature`.
+ */
+export function asSignatureSizes(s: Sizes): SignatureSizes | undefined {
+  return s.family === "ml-dsa" || s.family === "slh-dsa" ? s : undefined;
 }

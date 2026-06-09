@@ -79,3 +79,17 @@ test("HNDL flag reflects confidentiality vs signature-only packages", () => {
 test("invalid JSON manifests are skipped without throwing", () => {
   assert.deepEqual(scanManifest("package.json", "{ not json"), []);
 });
+
+test("dependency findings carry a CWE id", () => {
+  const f = scanManifest("package.json", JSON.stringify({ dependencies: { elliptic: "^6" } }))[0];
+  assert.equal(f.cwe, "CWE-327");
+});
+
+test("multi-family dependency remediation names all exposed families (C5)", () => {
+  // jose exposes RSA + ECDH + ECDSA + EdDSA → remediation should mention both a
+  // KEM (for the confidentiality families) and a signature replacement.
+  const f = scanManifest("package.json", JSON.stringify({ dependencies: { jose: "5" } }))[0];
+  assert.ok(f.remediation && f.remediation.length > 0);
+  assert.match(f.remediation, /ML-KEM|X25519MLKEM768/);
+  assert.match(f.remediation, /ML-DSA/);
+});

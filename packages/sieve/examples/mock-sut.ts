@@ -35,8 +35,9 @@ import { createInterface } from "node:readline";
 
 type Sizes = { pk: number; sk: number; ct: number; ss: number; sig: number };
 
-// Public, standardized parameter sizes (FIPS 203 / 204). The mock needs them to
-// emit correctly-shaped blobs. (sig=0 for KEM sets, ss=0 for DSA sets.)
+// Public, standardized parameter sizes (FIPS 203 / 204 / 205). The mock needs
+// them to emit correctly-shaped blobs. (sig=0 for KEM sets, ss=0/ct=0 for
+// signature sets.)
 const SIZES: Record<string, Sizes> = {
   "ml-kem-512": { pk: 800, sk: 1632, ct: 768, ss: 32, sig: 0 },
   "ml-kem-768": { pk: 1184, sk: 2400, ct: 1088, ss: 32, sig: 0 },
@@ -44,6 +45,19 @@ const SIZES: Record<string, Sizes> = {
   "ml-dsa-44": { pk: 1312, sk: 2560, ct: 0, ss: 0, sig: 2420 },
   "ml-dsa-65": { pk: 1952, sk: 4032, ct: 0, ss: 0, sig: 3309 },
   "ml-dsa-87": { pk: 2592, sk: 4896, ct: 0, ss: 0, sig: 4627 },
+  // SLH-DSA (FIPS 205, Table 2). pk=2n, sk=4n; sig per set.
+  "slh-dsa-sha2-128s": { pk: 32, sk: 64, ct: 0, ss: 0, sig: 7856 },
+  "slh-dsa-shake-128s": { pk: 32, sk: 64, ct: 0, ss: 0, sig: 7856 },
+  "slh-dsa-sha2-128f": { pk: 32, sk: 64, ct: 0, ss: 0, sig: 17088 },
+  "slh-dsa-shake-128f": { pk: 32, sk: 64, ct: 0, ss: 0, sig: 17088 },
+  "slh-dsa-sha2-192s": { pk: 48, sk: 96, ct: 0, ss: 0, sig: 16224 },
+  "slh-dsa-shake-192s": { pk: 48, sk: 96, ct: 0, ss: 0, sig: 16224 },
+  "slh-dsa-sha2-192f": { pk: 48, sk: 96, ct: 0, ss: 0, sig: 35664 },
+  "slh-dsa-shake-192f": { pk: 48, sk: 96, ct: 0, ss: 0, sig: 35664 },
+  "slh-dsa-sha2-256s": { pk: 64, sk: 128, ct: 0, ss: 0, sig: 29792 },
+  "slh-dsa-shake-256s": { pk: 64, sk: 128, ct: 0, ss: 0, sig: 29792 },
+  "slh-dsa-sha2-256f": { pk: 64, sk: 128, ct: 0, ss: 0, sig: 49856 },
+  "slh-dsa-shake-256f": { pk: 64, sk: 128, ct: 0, ss: 0, sig: 49856 },
 };
 
 /** Fault injection: set MOCK_BREAK to make the mock misbehave on purpose. */
@@ -78,6 +92,56 @@ function unb64(s: string): Buffer {
   return Buffer.from(s, "base64");
 }
 
+// --- FIPS 203 §7.2 encapsulation-key modulus-range modelling ---------------
+// A real ML-KEM ek is ByteEncode₁₂(t̂) || ρ: the first (pk-32) bytes pack 12-bit
+// little-endian coefficients that MUST be < q. The mock's fake pk bytes don't
+// naturally satisfy this, so we (a) REDUCE the t̂ region at keygen so the
+// well-behaved mock emits a valid ek, and (b) RANGE-CHECK at encaps so an
+// out-of-range ek is rejected — exactly the §7.2 input validation Sieve probes.
+const KEM_Q = 3329;
+
+/** Iterate the 12-bit coefficients packed in the t̂ region; call cb per coeff. */
+function eachCoeff12(that: Buffer, cb: (coeff: number, i: number) => void): void {
+  const pairs = Math.floor(that.length / 3);
+  for (let p = 0; p < pairs; p++) {
+    const b0 = that[p * 3] as number;
+    const b1 = that[p * 3 + 1] as number;
+    const b2 = that[p * 3 + 2] as number;
+    cb(b0 | ((b1 & 0x0f) << 8), p * 2);
+    cb((b1 >> 4) | (b2 << 4), p * 2 + 1);
+  }
+}
+
+/** Pack a list of 12-bit coefficients back into the t̂ byte region (in place). */
+function packCoeff12(that: Buffer, coeffs: number[]): void {
+  const pairs = Math.floor(that.length / 3);
+  for (let p = 0; p < pairs; p++) {
+    const d0 = coeffs[p * 2] as number;
+    const d1 = coeffs[p * 2 + 1] as number;
+    that[p * 3] = d0 & 0xff;
+    that[p * 3 + 1] = ((d0 >> 8) & 0x0f) | ((d1 & 0x0f) << 4);
+    that[p * 3 + 2] = (d1 >> 4) & 0xff;
+  }
+}
+
+/** Reduce a fresh pk's t̂ region so every packed 12-bit coefficient is < q. */
+function reduceEkCoeffs(pk: Buffer): void {
+  const that = pk.subarray(0, pk.length - 32); // last 32 bytes are ρ
+  const coeffs: number[] = [];
+  eachCoeff12(that, (c) => coeffs.push(c % KEM_Q));
+  packCoeff12(that, coeffs);
+}
+
+/** True iff any packed 12-bit coefficient in the t̂ region is ≥ q. */
+function ekHasOutOfRangeCoeff(ek: Buffer): boolean {
+  const that = ek.subarray(0, ek.length - 32);
+  let bad = false;
+  eachCoeff12(that, (c) => {
+    if (c >= KEM_Q) bad = true;
+  });
+  return bad;
+}
+
 let reqCounter = 0;
 
 function keygen(param: string, seedB64?: string): { pk: string; sk: string } {
@@ -89,6 +153,10 @@ function keygen(param: string, seedB64?: string): { pk: string; sk: string } {
   // sk HEAD with a pk-tag so decaps can recover it from sk alone — deriving pk
   // from the tail keeps pk stable under that overwrite (see pkFromSk).
   const pk = expand(h("pk", sk.subarray(TAG_LEN)), sizes.pk);
+  // For ML-KEM, reduce the t̂ region so the emitted ek satisfies the FIPS 203
+  // §7.2 modulus range (all packed 12-bit coefficients < q). Done BEFORE the
+  // pk-tag is computed so the tag binds the final pk.
+  if (param.startsWith("ml-kem") && pk.length > 32) reduceEkCoeffs(pk);
   const pkTag = h("pktag", pk).subarray(0, TAG_LEN);
   pkTag.copy(sk, 0);
   return { pk: b64(pk), sk: b64(sk) };
@@ -98,6 +166,12 @@ function encaps(param: string, pkB64: string, coinsB64?: string): { ct: string; 
   const sizes = SIZES[param] as Sizes;
   const pk = unb64(pkB64);
   if (pk.length !== sizes.pk) throw { code: "invalid-length", message: `pk must be ${sizes.pk} bytes` };
+  // FIPS 203 §7.2: reject a correctly-sized ek whose t̂ coefficients are not
+  // reduced mod q. The well-behaved mock enforces this; MOCK_BREAK can disable
+  // it to model an implementation that skips the modulus check.
+  if (BREAK !== "accept-out-of-range-ek" && ekHasOutOfRangeCoeff(pk)) {
+    throw { code: "invalid-ek", message: "encapsulation key has an out-of-range coefficient (≥ q)" };
+  }
   const coins = coinsB64 ? unb64(coinsB64) : Buffer.from(`coins-${reqCounter++}-${Math.random()}`);
   // ct layout: [ pkTag(16) | body... ]. pkTag binds the ct to this pk so decaps
   // can detect corruption; body carries enough entropy to derive ss.
@@ -176,7 +250,10 @@ function sign(param: string, skB64: string, msgB64: string): { sig: string } {
   // sig bytes. verify() recomputes the mac and checks EVERY mac byte, so a flip
   // anywhere in the body (or a changed msg/pk) breaks verification.
   const pk = pkFromSk(param, sk); // pk = expand(H("pk"|sk)) from keygen
-  const salt = h("sigsalt", sk, msg, Buffer.from(`${Math.random()}`)).subarray(0, TAG_LEN);
+  // Hedged by default (random salt). MOCK_BREAK=deterministic-sign forces a
+  // deterministic salt so the signing-mode advisory probe reports DETERMINISTIC.
+  const saltEntropy = BREAK === "deterministic-sign" ? Buffer.alloc(0) : Buffer.from(`${Math.random()}`);
+  const salt = h("sigsalt", sk, msg, saltEntropy).subarray(0, TAG_LEN);
   const mac = expand(h("vmac", pk, msg, salt), sizes.sig - TAG_LEN);
   let sig = Buffer.concat([salt, mac]).subarray(0, sizes.sig);
   if (BREAK === "wrong-sig-size") sig = sig.subarray(0, sizes.sig - 1);

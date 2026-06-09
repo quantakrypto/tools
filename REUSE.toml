@@ -1,0 +1,42 @@
+# REUSE configuration (https://reuse.software, REUSE.toml format / spec 3.3).
+#
+# qproof-tools uses a BULK licensing declaration instead of per-file SPDX
+# headers: every source file in the repository is Apache-2.0, copyright
+# "qproof / Dandelion Labs JSC". This file is the machine-readable, REUSE-compliant
+# statement of that fact, so `reuse lint` passes without touching any source.
+#
+# The full license text lives at LICENSES/Apache-2.0.txt (and the root LICENSE).
+# See docs/SUPPLY-CHAIN.md for how this supports the SPDX/REUSE assurance target.
+
+version = 1
+
+# ── All source: Apache-2.0 ───────────────────────────────────────────────────
+# One annotation covering the whole tree. The precedence/override semantics of
+# REUSE.toml mean later, more specific [[annotations]] blocks win, so the data
+# carve-outs below take effect over this catch-all.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright 2026 qproof / Dandelion Labs JSC"
+SPDX-License-Identifier = "Apache-2.0"
+
+# ── Generated / data / config without their own copyright ────────────────────
+# These are non-creative or generated artifacts; license them with the project
+# to keep the tree REUSE-clean. CC0-1.0 marks "no rights reserved" data.
+[[annotations]]
+path = [
+  "package-lock.json",
+  "**/package-lock.json",
+  "**/*.snap",
+  "**/__snapshots__/**",
+  "graphify-out/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Copyright 2026 qproof / Dandelion Labs JSC"
+SPDX-License-Identifier = "CC0-1.0"
+
+# NOTE: Sieve ships NO third-party NIST ACVP vectors (see
+# docs/adr/0004-sieve-no-fabricated-vectors.md). If an operator drops official
+# NIST vector files into packages/sieve/vectors/ locally, those are NOT committed
+# and are NOT covered by this declaration — record their provenance per
+# docs/compliance/acvp-provenance.md instead.

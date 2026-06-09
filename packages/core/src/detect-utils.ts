@@ -56,6 +56,8 @@ export interface FindingSpec {
   message: string;
   /** Override the auto-derived remediation text. */
   remediation?: string;
+  /** Associated CWE id (e.g. "CWE-327"). */
+  cwe?: string;
   /** The matched source text and its start offset within `content`. */
   file: string;
   content: string;
@@ -101,6 +103,7 @@ export function makeFinding(spec: FindingSpec): Finding {
   };
   if (spec.algorithm) finding.algorithm = spec.algorithm;
   if (remediation) finding.remediation = remediation;
+  if (spec.cwe) finding.cwe = spec.cwe;
   return finding;
 }
 
@@ -119,6 +122,34 @@ export const JS_TS_EXTENSIONS: readonly string[] = [
   ".mjs",
   ".cjs",
 ];
+
+/**
+ * Given a SORTED ascending array of call offsets, return true when `idx` is at
+ * or after some call offset `c` with `idx - c < window`. Runs in O(log n) by
+ * binary-searching the largest call offset ≤ `idx` and checking the gap. This
+ * replaces the previous O(matches × calls) linear scan (`nearCall`).
+ */
+export function nearSortedCall(
+  sortedCalls: readonly number[],
+  idx: number,
+  window: number,
+): boolean {
+  // Find the rightmost element <= idx.
+  let lo = 0;
+  let hi = sortedCalls.length - 1;
+  let best = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sortedCalls[mid] <= idx) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (best < 0) return false;
+  return idx - sortedCalls[best] < window;
+}
 
 /**
  * Run a global regex over `content`, invoking `onMatch` for each hit. Resets

@@ -132,6 +132,30 @@ export const sizes: Category = async (ctx): Promise<CategoryResult> => {
     () => kemDecapsRaw(ctx.runner, param, zerosB64(km.secretKey - 1), zerosB64(km.ciphertext)),
   );
 
+  // --- C. FIPS 203 §7.2 encapsulation-key modulus-range check ---------------
+  // A correctly-SIZED ek whose t̂ coefficients are NOT reduced mod q (< 3329)
+  // must be rejected: §7.2 requires encaps to perform the "modulus check"
+  // (ek must round-trip through ByteEncode₁₂/ByteDecode₁₂). The length checks
+  // above do NOT catch this — an ek with an out-of-range coefficient still has
+  // the right byte length. We take a VALID ek from keygen and force its first
+  // 12-bit coefficient to 0xFFF (4095 ≥ 3329) while preserving the length, then
+  // require encaps to reject it with a defined error. We assert NO crypto bytes.
+  if (pkB64.length > 0) {
+    await expectReject(
+      checks,
+      "encaps-ek-coeff-out-of-range",
+      () => kemEncapsRaw(ctx.runner, param, outOfRangeEk(pkB64)),
+    );
+  } else {
+    checks.push(
+      fail(
+        "encaps-ek-coeff-out-of-range",
+        "could not obtain a valid ek from keygen to build the modulus-range probe",
+        BUG,
+      ),
+    );
+  }
+
   const status = rollUp(checks);
   return {
     category: "sizes",
@@ -144,6 +168,29 @@ export const sizes: Category = async (ctx): Promise<CategoryResult> => {
         : `${checks.filter((c) => c.status === "fail").length} size/format issue(s)`,
   };
 };
+
+/**
+ * Build a same-length-but-out-of-range encapsulation key from a valid one.
+ *
+ * FIPS 203 packs t̂ with ByteEncode₁₂: each consecutive 3 bytes [b0,b1,b2] hold
+ * two 12-bit little-endian coefficients
+ *   d0 = b0 | ((b1 & 0x0F) << 8)
+ *   d1 = (b1 >> 4) | (b2 << 4)
+ * We set the FIRST coefficient d0 to 0xFFF (4095), which is ≥ q (3329) and thus
+ * NOT a valid reduced coefficient — this is the classic "ek not reduced mod q"
+ * malleability. The byte length is unchanged, so only a real §7.2 modulus check
+ * (not a length check) catches it. We touch only b0/b1, leaving everything else
+ * (including ρ) intact, so the ek stays structurally well-formed apart from the
+ * single out-of-range coefficient. No cryptographic values are fabricated.
+ */
+function outOfRangeEk(ekB64: string): string {
+  const buf = Buffer.from(ekB64, "base64");
+  if (buf.length >= 2) {
+    buf[0] = 0xff; // low 8 bits of d0
+    buf[1] = (buf[1] as number) | 0x0f; // high 4 bits of d0 -> d0 = 0xFFF = 4095
+  }
+  return buf.toString("base64");
+}
 
 /**
  * Run an operation that SHOULD be rejected. A clean protocol `error` (ok:false)

@@ -52,6 +52,12 @@ export interface CategoryContext {
   sizes: Sizes;
   /** Number of randomized iterations to perform (where applicable). */
   iterations: number;
+  /**
+   * Max concurrent in-flight requests for categories that issue many
+   * INDEPENDENT requests (via {@link Runner.sendMany}). Default 16 when unset.
+   * Categories with dependent/ordered ops ignore this and use serial `send`.
+   */
+  pipelineDepth?: number;
   /** Optional directory of official ACVP/KAT vectors (kat category only). */
   vectorsDir?: string;
 }

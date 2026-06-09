@@ -72,6 +72,77 @@ test("Node crypto createSign signatures are high but not HNDL", () => {
   assert.equal(f.hndl, false);
 });
 
+test("Node crypto EC keygen is key-exchange-capable and HNDL-exposed (P0-4)", () => {
+  const f = byRule(run("a.ts", "const kp = generateKeyPairSync('ec', { namedCurve: 'P-256' });"), "node-crypto-keygen");
+  assert.ok(f, "ec keygen detected");
+  // EC keys feed BOTH ECDSA (sign) and ECDH (key agreement); the ECDH path is
+  // HNDL-exposed, so the finding must NOT be signature-only / hndl:false.
+  assert.equal(f.algorithm, "ECDH");
+  assert.equal(f.category, "key-exchange");
+  assert.equal(f.hndl, true);
+  assert.match(f.message, /ECDSA/);
+  assert.match(f.message, /ECDH/);
+  assert.ok(f.cwe, "carries a CWE id");
+});
+
+test("Node crypto one-shot sign/verify is flagged", () => {
+  const f = byRule(run("a.ts", "crypto.sign('sha256', data, privateKey);"), "node-crypto-sign-oneshot");
+  assert.ok(f, "one-shot crypto.sign detected");
+  assert.equal(f.category, "signature");
+  assert.equal(f.hndl, false);
+});
+
+test("Node crypto getDiffieHellman MODP group is HNDL", () => {
+  const f = byRule(run("a.ts", "const dh = crypto.getDiffieHellman('modp14');"), "node-crypto-dh-modp");
+  assert.ok(f, "modp group detected");
+  assert.equal(f.algorithm, "DH");
+  assert.equal(f.hndl, true);
+});
+
+test("JOSE ECDH-ES key agreement is key-exchange + HNDL", () => {
+  const f = byRule(run("a.ts", "const enc = { alg: 'ECDH-ES+A256KW' };"), "jose-ecdh-es");
+  assert.ok(f, "ECDH-ES detected");
+  assert.equal(f.category, "key-exchange");
+  assert.equal(f.algorithm, "ECDH");
+  assert.equal(f.hndl, true);
+});
+
+test("secp256k1 direct usage is flagged", () => {
+  const f = byRule(run("a.ts", "const sig = secp256k1.sign(msgHash, privKey);"), "secp256k1-usage");
+  assert.ok(f, "secp256k1 usage detected");
+  assert.equal(f.algorithm, "ECDSA");
+});
+
+test("SSH public key and cert signature algorithm are config-scope findings", () => {
+  const ssh = byRule(run("authorized_keys", "ssh-ed25519 AAAAC3Nz... user@host"), "ssh-public-key");
+  assert.ok(ssh, "ssh-ed25519 public key detected");
+  assert.equal(ssh.algorithm, "EdDSA");
+
+  const cert = byRule(run("cert.cnf", "signatureAlgorithm: sha256WithRSAEncryption"), "cert-signature-algorithm");
+  assert.ok(cert, "cert signature algorithm detected");
+  assert.equal(cert.algorithm, "RSA");
+});
+
+test("DSA and PGP PEM blocks are detected (C7)", () => {
+  const dsa = byRule(run("k.pem", "-----BEGIN DSA PRIVATE KEY-----\nx\n-----END DSA PRIVATE KEY-----"), "pem-dsa-private-key");
+  assert.ok(dsa, "DSA PEM key detected");
+  assert.equal(dsa.algorithm, "DSA");
+
+  const pgp = byRule(
+    run("secret.asc", "-----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK-----"),
+    "pem-pgp-private-key",
+  );
+  assert.ok(pgp, "PGP private key block detected");
+  assert.equal(pgp.severity, "critical");
+});
+
+test("every source finding carries a CWE id (P2-6)", () => {
+  const src = "crypto.createECDH('p256'); jwt.sign(p, k, { algorithm: 'RS256' });";
+  for (const f of run("a.ts", src)) {
+    assert.ok(f.cwe && /^CWE-\d+$/.test(f.cwe), `${f.ruleId} has a CWE id`);
+  }
+});
+
 test("Node crypto x25519/ed25519 are flagged low", () => {
   const x = byRule(run("a.js", "generateKeyPairSync('x25519');"), "node-crypto-keygen");
   assert.ok(x);
@@ -178,6 +249,32 @@ test("TLS weak cipher", () => {
   const f = byRule(run("a.ts", "const o = { ciphers: 'RC4-MD5:HIGH' };"), "tls-weak-cipher");
   assert.ok(f);
   assert.equal(f.category, "tls");
+});
+
+test("TLS weak-cipher regex is bounded (no catastrophic backtracking)", () => {
+  // Pathological input: `ciphers:'` then a long non-quote run with no close
+  // quote. The hardened {0,256} bounds keep this linear; assert it completes
+  // quickly (a super-linear regex would blow well past this on 200k chars).
+  const evil = "const o = { ciphers: '" + "A".repeat(200_000);
+  const start = Date.now();
+  const findings = run("a.ts", evil);
+  const elapsed = Date.now() - start;
+  assert.equal(findings.filter((f) => f.ruleId === "tls-weak-cipher").length, 0);
+  assert.ok(elapsed < 1000, `cipher regex stayed bounded (${elapsed}ms)`);
+});
+
+test("WebCrypto nearCall scales on many calls/tokens (binary search)", () => {
+  // Build a file with many subtle calls, then a >400-char gap, then many algo
+  // tokens. A quadratic nearCall would be slow here; assert it completes fast.
+  const calls = Array.from({ length: 2000 }, () => "subtle.sign(x);").join("\n");
+  const gap = "/* " + "z".repeat(2000) + " */\n";
+  const tokens = Array.from({ length: 2000 }, () => "'ECDSA';").join("\n");
+  const start = Date.now();
+  const findings = run("a.ts", calls + "\n" + gap + tokens);
+  const elapsed = Date.now() - start;
+  // Tokens are >400 chars past the last call, so none should be flagged.
+  assert.equal(findings.filter((f) => f.ruleId === "webcrypto-classical").length, 0);
+  assert.ok(elapsed < 1500, `nearCall stayed sub-quadratic (${elapsed}ms)`);
 });
 
 test("detectors only apply to JS/TS for source rules", () => {

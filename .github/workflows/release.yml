@@ -1,0 +1,108 @@
+# Release — build, test, and publish @qproof/* to npm with provenance.
+#
+# DEFERRED: publishing is intentionally not enabled yet. Per docs/ROADMAP.md §5
+# the project finalizes the technology before its first npm release. This file is
+# a working scaffold, GATED so it cannot publish by accident:
+#   * it only runs on a manual workflow_dispatch (never on push/tag), and
+#   * publish steps require the NPM_TOKEN secret to be present.
+# Until NPM_TOKEN is configured and `confirm: publish` is entered, the workflow
+# builds + tests and stops at a dry run.
+#
+# When you are ready to publish (see docs/SUPPLY-CHAIN.md for the provenance plan):
+#   1. Add the NPM_TOKEN repository secret (an npm automation token).
+#   2. Ensure the Action's dist/ is committed/bundled FIRST — a node20 action runs
+#      packages/action/dist/main.js directly, so `uses: …/packages/action@v1` will
+#      not work until the built JS is committed (ROADMAP §5). The publish job for
+#      the action is therefore guarded separately below.
+#   3. Run this workflow with confirm = "publish".
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "publish" to actually publish. Anything else = dry run.'
+        required: true
+        default: "dry-run"
+
+# Provenance attestation needs id-token: write (OIDC); contents read for checkout.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  publish:
+    name: Publish to npm (provenance)
+    needs: build-test
+    runs-on: ubuntu-latest
+    # Only attempt publishing on an explicit confirmation.
+    if: ${{ github.event.inputs.confirm == 'publish' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      - run: npm run build
+
+      # Guard: do nothing destructive unless the token is actually configured.
+      - name: Check NPM_TOKEN is present
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::NPM_TOKEN secret is not set. Publishing is deferred (ROADMAP §5)."
+            exit 1
+          fi
+
+      # Publish the shared library first (consumers depend on it), then the
+      # leaf packages. --provenance produces a signed Sigstore attestation via
+      # the id-token OIDC token, visible on each package's npm page.
+      #
+      # NOTE on @qproof/action: its dist/ MUST be committed/bundled before it can
+      # be consumed as a `uses:` action (ROADMAP §5). Publishing it to npm does not
+      # remove that requirement; keep its publish line commented until dist is
+      # committed and a "dist is fresh" CI gate exists.
+      - name: Publish @qproof/core
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace @qproof/core --provenance --access public
+
+      - name: Publish @qproof/qscan
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace @qproof/qscan --provenance --access public
+
+      - name: Publish @qproof/mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace @qproof/mcp --provenance --access public
+
+      - name: Publish @qproof/sieve
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspace @qproof/sieve --provenance --access public
+
+      # - name: Publish @qproof/action
+      #   # BLOCKED until packages/action/dist is committed/bundled (ROADMAP §5).
+      #   env:
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      #   run: npm publish --workspace @qproof/action --provenance --access public

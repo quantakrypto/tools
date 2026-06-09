@@ -28,6 +28,9 @@ export type Op =
   | "sign"
   | "verify";
 
+/** Families that support the signature operations (sign / verify). */
+export type SignatureFamily = "ml-dsa" | "slh-dsa";
+
 /** Fields common to every request. */
 interface RequestBase {
   /** Correlation id; the SUT MUST echo it back on the matching response. */
@@ -67,9 +70,9 @@ export interface DecapsRequest extends RequestBase {
   ct: string;
 }
 
-/** ML-DSA signature generation. */
+/** ML-DSA / SLH-DSA signature generation. */
 export interface SignRequest extends RequestBase {
-  family: "ml-dsa";
+  family: SignatureFamily;
   op: "sign";
   /** Base64 secret (signing) key. */
   sk: string;
@@ -77,9 +80,9 @@ export interface SignRequest extends RequestBase {
   msg: string;
 }
 
-/** ML-DSA signature verification. */
+/** ML-DSA / SLH-DSA signature verification. */
 export interface VerifyRequest extends RequestBase {
-  family: "ml-dsa";
+  family: SignatureFamily;
   op: "verify";
   /** Base64 public (verification) key. */
   pk: string;

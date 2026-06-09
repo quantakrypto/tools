@@ -16,10 +16,31 @@ export { VERSION } from "./version.js";
 export type { SarifLog } from "./report.js";
 
 // Core orchestration + built-in detector set.
-export { scan, detectors } from "./scan.js";
+export { scan, detectors, detectFile, compareFindings } from "./scan.js";
+
+// Parallel scanning (worker_threads pool) + pure merge/chunk helpers.
+export { scanParallel, mergeChunkResults, chunkByBytes } from "./parallel.js";
+export type { ScanChunk, ChunkResult, SizedFile } from "./parallel.js";
+
+// Detector registry (plugin point) + helpers.
+export { DetectorRegistry, defaultRegistry, detectorScope } from "./registry.js";
+
+// Canonical baseline (shared by qScan + the Action).
+export {
+  fingerprintFinding,
+  baselineFromFindings,
+  applyBaseline,
+  loadBaseline,
+  saveBaseline,
+  BASELINE_VERSION,
+} from "./baseline.js";
+export type { Baseline } from "./baseline.js";
+
+// Incremental scanning: changed-files helper (git-aware, tolerant).
+export { changedFiles } from "./changed.js";
 
 // Filesystem walker (relative POSIX paths, default ignores, size/binary filters).
-export { walkFiles } from "./walk.js";
+export { walkFiles, isBinaryPath, isGeneratedPath, looksMinified } from "./walk.js";
 
 // Inventory + readiness score.
 export { buildInventory } from "./inventory.js";
@@ -30,5 +51,25 @@ export { vulnerableDependencies } from "./dependencies.js";
 // Reporters.
 export { toSarif, toJson, formatSummary } from "./report.js";
 
-// Remediation lookup.
-export { remediationFor } from "./remediation.js";
+// CycloneDX 1.6 cryptographic bill of materials (CBOM) export.
+export { toCbom } from "./cbom.js";
+export type { CycloneDxBom, CbomComponent } from "./cbom.js";
+
+// Remediation lookup (family + tier-aware) and stateful-HBS guidance.
+export {
+  remediationFor,
+  remediationForTier,
+  TIER_PARAMS,
+  STATEFUL_HBS_NOTE,
+  statefulHbsApplies,
+} from "./remediation.js";
+export type { SecurityTier } from "./remediation.js";
+
+// CWE identifier constants.
+export {
+  CWE_BROKEN_CRYPTO,
+  CWE_WEAK_STRENGTH,
+  CWE_CERT_VALIDATION,
+  CWE_HARDCODED_KEY,
+  CWE_RISKY_PRIMITIVE,
+} from "./cwe.js";

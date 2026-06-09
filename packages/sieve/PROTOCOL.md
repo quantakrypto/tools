@@ -1,8 +1,9 @@
 # Sieve SUT Protocol (v1)
 
-Sieve drives a **system-under-test (SUT)** — any ML-KEM (FIPS 203) or ML-DSA
-(FIPS 204) implementation you provide — by spawning it as a child process and
-exchanging **newline-delimited JSON** (NDJSON) over `stdin`/`stdout`.
+Sieve drives a **system-under-test (SUT)** — any ML-KEM (FIPS 203), ML-DSA
+(FIPS 204), or SLH-DSA (FIPS 205) implementation you provide — by spawning it as
+a child process and exchanging **newline-delimited JSON** (NDJSON) over
+`stdin`/`stdout`.
 
 - **One request per line** on the SUT's `stdin`.
 - **One response per line** on the SUT's `stdout`.
@@ -29,9 +30,12 @@ Every request has:
 | field    | type   | notes                                            |
 |----------|--------|--------------------------------------------------|
 | `id`     | int    | correlation id; echo it back unchanged           |
-| `family` | string | `"ml-kem"` or `"ml-dsa"`                          |
-| `param`  | string | e.g. `"ml-kem-768"`, `"ml-dsa-65"`               |
+| `family` | string | `"ml-kem"`, `"ml-dsa"`, or `"slh-dsa"`           |
+| `param`  | string | e.g. `"ml-kem-768"`, `"ml-dsa-65"`, `"slh-dsa-sha2-128f"` |
 | `op`     | string | `keygen` / `encaps` / `decaps` / `sign` / `verify` |
+
+`encaps` / `decaps` apply to `ml-kem`; `sign` / `verify` apply to `ml-dsa` and
+`slh-dsa`; `keygen` applies to all three.
 
 ### ML-KEM operations
 
@@ -61,6 +65,29 @@ Every request has:
 { "id": 6, "family": "ml-dsa", "param": "ml-dsa-65", "op": "verify", "pk": "<b64>", "msg": "<b64>", "sig": "<b64>" }
 // -> { "id": 6, "ok": true, "valid": true }    // verdict, not an error
 ```
+
+### SLH-DSA operations (FIPS 205)
+
+SLH-DSA uses the **same** `keygen` / `sign` / `verify` shapes as ML-DSA; only
+`family` and `param` differ. Parameter sets:
+`slh-dsa-{sha2,shake}-{128,192,256}{s,f}` (12 sets). Like ML-DSA, signing MAY be
+randomized (hedged) or deterministic — both conform; Sieve detects which but
+never asserts exact signature bytes from self-consistency tests.
+
+```jsonc
+{ "id": 7, "family": "slh-dsa", "param": "slh-dsa-sha2-128f", "op": "keygen" }
+// -> { "id": 7, "ok": true, "pk": "<b64>", "sk": "<b64>" }
+
+{ "id": 8, "family": "slh-dsa", "param": "slh-dsa-sha2-128f", "op": "sign", "sk": "<b64>", "msg": "<b64>" }
+// -> { "id": 8, "ok": true, "sig": "<b64>" }
+
+{ "id": 9, "family": "slh-dsa", "param": "slh-dsa-sha2-128f", "op": "verify", "pk": "<b64>", "msg": "<b64>", "sig": "<b64>" }
+// -> { "id": 9, "ok": true, "valid": true }
+```
+
+> **Out of scope:** SP 800-208 stateful hash signatures (LMS / XMSS / HSS) are
+> not supported — their one-time-key state management cannot be modeled by a
+> stateless request/response harness. See the README "Algorithm scope".
 
 ## Response shapes
 
@@ -119,8 +146,18 @@ without asserting the exact rejection value.
 - `decaps(sk, ct)` is a pure function — identical inputs give identical `ss`.
 - `keygen` with a `seed` and `encaps` with `coins` must be reproducible; without
   them they may use fresh randomness.
-- `sign` may be randomized (ML-DSA hedged mode); Sieve never asserts exact
+- `sign` may be randomized (ML-DSA / SLH-DSA hedged mode) or deterministic; both
+  conform. Sieve detects which (an **advisory** probe) but never asserts exact
   signature bytes from self-consistency tests.
+
+## ML-KEM encapsulation-key validation (FIPS 203 §7.2)
+
+`encaps` MUST perform the §7.2 **modulus check** on the encapsulation key `ek`:
+the packed `t̂` coefficients must each be `< q` (3329), i.e. `ek` must round-trip
+through `ByteEncode₁₂`/`ByteDecode₁₂`. A correctly-**sized** `ek` whose
+coefficients are not reduced mod q MUST be rejected with a defined `error` — not
+accepted. (A wrong-**length** `ek` is also rejected, as a framing error.) Sieve's
+`sizes` category probes this with a same-length-but-out-of-range `ek`.
 
 ## Versioning
 

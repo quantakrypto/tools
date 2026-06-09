@@ -7,8 +7,10 @@
  * public-key crypto. General-purpose packages that merely call out to Node's
  * crypto are out of scope here (those are caught by the source detectors).
  */
-import type { Finding, VulnerableDependency } from "./types.js";
+import type { AlgorithmFamily, Finding, VulnerableDependency } from "./types.js";
 import { makeFinding } from "./detect-utils.js";
+import { remediationText } from "./remediation.js";
+import { CWE_BROKEN_CRYPTO } from "./cwe.js";
 
 /** Known quantum-vulnerable npm dependencies. */
 export const vulnerableDependencies: VulnerableDependency[] = [
@@ -159,6 +161,39 @@ const BY_NAME = new Map<string, VulnerableDependency>(
   vulnerableDependencies.map((d) => [d.name, d]),
 );
 
+/**
+ * Precompiled `"name":` lookup regex per known package (P1-9): the package set
+ * is static, so we build the (escaped-name → RegExp) map once at module load
+ * rather than recompiling a fresh RegExp per found package per manifest.
+ */
+const KEY_REGEX_BY_NAME = new Map<string, RegExp>(
+  vulnerableDependencies.map((d): [string, RegExp] => {
+    const escaped = d.name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    return [d.name, new RegExp(`"${escaped}"\\s*:`)];
+  }),
+);
+
+/** Algorithm families that expose confidentiality (HNDL) rather than only signing. */
+const CONFIDENTIALITY_FAMILIES: ReadonlySet<AlgorithmFamily> = new Set<AlgorithmFamily>([
+  "RSA",
+  "ECDH",
+  "DH",
+  "ECIES",
+  "X25519",
+  "X448",
+]);
+
+/**
+ * Build a remediation string covering ALL families a package exposes (C5),
+ * rather than only `algorithms[0]`. De-duplicates the per-family recommendation
+ * strings and joins them, so a signature+KEM library points at both replacements.
+ */
+function multiFamilyRemediation(algorithms: readonly AlgorithmFamily[]): string {
+  const parts = new Set<string>();
+  for (const a of algorithms) parts.add(remediationText(a));
+  return [...parts].join("; ");
+}
+
 /** True if a file path looks like a manifest we can parse for dependencies. */
 export function isManifestFile(file: string): boolean {
   const base = file.split("/").pop() ?? file;
@@ -176,7 +211,8 @@ function dependencyFinding(
   content: string,
   index: number,
 ): Finding {
-  // Use the first listed algorithm to derive a default remediation/algorithm.
+  // Use the first listed algorithm for the headline family, but derive the
+  // remediation from ALL families the package exposes (C5).
   const algorithm = dep.algorithms[0] ?? "unknown";
   return makeFinding({
     ruleId: "dep-vulnerable",
@@ -186,8 +222,10 @@ function dependencyFinding(
     confidence: "high",
     algorithm,
     // Confidentiality libs are HNDL-exposed; signature-only ones are not.
-    hndl: dep.algorithms.some((a) => a === "RSA" || a === "ECDH" || a === "DH" || a === "ECIES" || a === "X25519"),
+    hndl: dep.algorithms.some((a) => CONFIDENTIALITY_FAMILIES.has(a)),
+    cwe: CWE_BROKEN_CRYPTO,
     message: `${dep.name} — ${dep.reason}`,
+    remediation: multiFamilyRemediation(dep.algorithms),
     file,
     content,
     index,
@@ -196,9 +234,9 @@ function dependencyFinding(
 
 /** Locate the offset of a JSON key `"name"` in the manifest text (or 0). */
 function offsetOfKey(content: string, name: string): number {
-  // Escape regex-special characters in the package name (e.g. @noble/curves).
-  const escaped = name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-  const re = new RegExp(`"${escaped}"\\s*:`, "g");
+  // Use the precompiled per-name regex (non-global; .exec from position 0).
+  const re = KEY_REGEX_BY_NAME.get(name);
+  if (!re) return 0;
   const m = re.exec(content);
   return m ? m.index : 0;
 }

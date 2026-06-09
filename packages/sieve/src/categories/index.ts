@@ -12,6 +12,7 @@ import { implicitRejection } from "./implicit-rejection.js";
 import { sizes } from "./sizes.js";
 import { robustness } from "./robustness.js";
 import { dsa } from "./dsa.js";
+import { slhDsa } from "./slh-dsa.js";
 import { kat } from "./kat.js";
 import { timing } from "./timing.js";
 
@@ -34,6 +35,7 @@ export const CATEGORIES: readonly RegisteredCategory[] = [
   { name: "sizes", family: "ml-kem", defaultOn: true, run: sizes },
   { name: "robustness", family: "ml-kem", defaultOn: true, run: robustness },
   { name: "dsa", family: "ml-dsa", defaultOn: true, run: dsa },
+  { name: "slh-dsa", family: "slh-dsa", defaultOn: true, run: slhDsa },
   { name: "kat", family: "any", defaultOn: true, run: kat },
   { name: "timing", family: "ml-kem", defaultOn: false, run: timing },
 ];
@@ -54,6 +56,7 @@ export {
   sizes,
   robustness,
   dsa,
+  slhDsa,
   kat,
   timing,
 };

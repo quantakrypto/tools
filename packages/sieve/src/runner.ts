@@ -32,10 +32,92 @@ export interface RunnerOptions {
   timeoutMs?: number;
   /** Working directory for the child process. */
   cwd?: string;
-  /** Extra environment variables, merged over the current process env. */
+  /**
+   * Extra environment variables for the SUT. These are layered ON TOP of the
+   * scrubbed base env (see below) — they are the ONLY way to pass arbitrary
+   * variables to a SUT unless {@link RunnerOptions.inheritEnv} is set.
+   */
   env?: Record<string, string>;
+  /**
+   * Inherit the FULL parent environment (`process.env`) instead of the scrubbed
+   * minimal env. **Default `false`.** The SUT is user-supplied code that Sieve
+   * drives; inheriting the parent env hands it every secret in the harness's
+   * environment (CI tokens, cloud creds, signing keys). Only enable this for
+   * trusted, local implementations you control. See docs/audits/security.md Q-17
+   * (CWE-526 / CWE-200).
+   */
+  inheritEnv?: boolean;
+  /**
+   * Additional environment variable NAMES to copy from `process.env` into the
+   * scrubbed base env (allow-list extension). Has no effect when
+   * {@link RunnerOptions.inheritEnv} is `true`. Values are read from the parent
+   * env at spawn time; names absent from `process.env` are skipped.
+   */
+  envAllowlist?: readonly string[];
   /** Optional sink for the SUT's stderr lines (for diagnostics). */
   onStderr?: (line: string) => void;
+}
+
+/**
+ * Minimal environment variables a child process generally needs to locate its
+ * interpreter, resolve its home directory, and produce sane text output. This
+ * is the default base env handed to the SUT — secrets in the parent env
+ * (tokens, credentials) are NOT forwarded. Extend via
+ * {@link RunnerOptions.envAllowlist} or pass explicit {@link RunnerOptions.env}.
+ */
+export const DEFAULT_ENV_ALLOWLIST: readonly string[] = [
+  "PATH",
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  // Windows process-spawn essentials (harmless / empty on POSIX).
+  "SystemRoot",
+  "SystemDrive",
+  "windir",
+  "PATHEXT",
+  "COMSPEC",
+];
+
+/**
+ * Build the environment handed to the spawned SUT.
+ *
+ * By default this is a SCRUBBED, minimal env: only the names in
+ * {@link DEFAULT_ENV_ALLOWLIST} (plus any in `opts.envAllowlist`) are copied
+ * from the parent `process.env`, then `opts.env` is layered on top. This keeps
+ * harness secrets out of untrusted SUT code (security.md Q-17). When
+ * `opts.inheritEnv` is set, the full parent env is used instead (legacy /
+ * trusted-local behavior).
+ *
+ * Exported for testing; the returned object never aliases `process.env`.
+ */
+export function buildSutEnv(
+  opts: Pick<RunnerOptions, "env" | "inheritEnv" | "envAllowlist">,
+  parentEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (opts.inheritEnv === true) {
+    for (const [k, v] of Object.entries(parentEnv)) {
+      if (typeof v === "string") out[k] = v;
+    }
+  } else {
+    const names = new Set<string>([
+      ...DEFAULT_ENV_ALLOWLIST,
+      ...(opts.envAllowlist ?? []),
+    ]);
+    for (const name of names) {
+      const v = parentEnv[name];
+      if (typeof v === "string") out[name] = v;
+    }
+  }
+  // Explicit extra env always wins, even over an inherited value.
+  if (opts.env) {
+    for (const [k, v] of Object.entries(opts.env)) out[k] = v;
+  }
+  return out;
 }
 
 /** Thrown when a request exceeds its timeout. */
@@ -86,7 +168,8 @@ export class Runner {
     const [bin, ...args] = opts.command;
     this.child = spawn(bin as string, args, {
       cwd: opts.cwd,
-      env: { ...process.env, ...opts.env },
+      // Scrubbed, minimal env by default — see buildSutEnv / security.md Q-17.
+      env: buildSutEnv(opts),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
 
@@ -188,6 +271,57 @@ export class Runner {
         }
       });
     });
+  }
+
+  /**
+   * Issue many INDEPENDENT requests with bounded concurrency (pipelining).
+   *
+   * The protocol is id-correlated (each response carries the request's `id`),
+   * so multiple requests may be in flight against the SUT at once. This writes
+   * up to `maxInFlight` requests before awaiting any response, refilling as each
+   * completes, and returns results in the SAME ORDER as `reqs` (independent of
+   * the order the SUT answers).
+   *
+   * CORRECTNESS CONSTRAINT: every request in `reqs` MUST be independent of the
+   * others — no request may depend on another's response, and the SUT must not
+   * carry cross-request state that ordering would expose. Dependent or
+   * order-sensitive sequences (e.g. keygen→encaps→decaps for a single key, or
+   * the timing category's isolated measurements) MUST use serial `send()`
+   * instead. See docs/audits/performance.md §7.1.
+   *
+   * Setting `maxInFlight <= 1` degrades to strictly serial behavior.
+   */
+  async sendMany(
+    reqs: readonly RequestInput[],
+    maxInFlight = 16,
+  ): Promise<Response[]> {
+    const limit = Math.max(1, Math.floor(maxInFlight));
+    const results: Response[] = new Array(reqs.length);
+    let next = 0;
+    let firstError: Error | undefined;
+
+    const worker = async (): Promise<void> => {
+      while (firstError === undefined) {
+        const i = next++;
+        if (i >= reqs.length) return;
+        try {
+          results[i] = await this.send(reqs[i] as RequestInput);
+        } catch (err) {
+          // Capture the first failure and stop launching new work; in-flight
+          // siblings settle on their own (their results are discarded).
+          if (firstError === undefined) firstError = err as Error;
+          return;
+        }
+      }
+    };
+
+    const workers: Promise<void>[] = [];
+    for (let w = 0; w < Math.min(limit, reqs.length); w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+    if (firstError !== undefined) throw firstError;
+    return results;
   }
 
   /**

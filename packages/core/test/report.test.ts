@@ -103,6 +103,71 @@ test("toSarif level mapping covers error/warning/note", () => {
   assert.equal(lvl(mk("info")), "note");
 });
 
+test("toSarif maps CWE into rule properties, result taxa, and run taxonomies", () => {
+  const f: Finding = {
+    ruleId: "node-crypto-ecdh",
+    title: "ECDH",
+    category: "key-exchange",
+    severity: "high",
+    confidence: "high",
+    algorithm: "ECDH",
+    hndl: true,
+    message: "m",
+    cwe: "CWE-327",
+    location: { file: "a.ts", line: 1 },
+  };
+  const log = toSarif({ ...sampleResult(), findings: [f], inventory: buildInventory([f]) });
+  const run = log.runs[0] as Record<string, any>;
+
+  // rules[].properties carries the CWE + security-severity.
+  assert.equal(run.tool.driver.rules[0].properties.cwe, "CWE-327");
+  assert.ok(run.tool.driver.rules[0].properties.tags.includes("CWE-327"));
+
+  // results[].taxa references the CWE taxon.
+  assert.equal(run.results[0].taxa[0].target.id, "CWE-327");
+  assert.equal(run.results[0].properties.cwe, "CWE-327");
+
+  // run.taxonomies declares the CWE taxonomy component.
+  assert.ok(Array.isArray(run.taxonomies));
+  assert.equal(run.taxonomies[0].name, "CWE");
+  assert.equal(run.taxonomies[0].taxa[0].id, "CWE-327");
+});
+
+test("toSarif omits taxonomies when no finding has a CWE", () => {
+  const f: Finding = {
+    ruleId: "r",
+    title: "t",
+    category: "signature",
+    severity: "low",
+    confidence: "high",
+    hndl: false,
+    message: "m",
+    location: { file: "a.ts", line: 1 },
+  };
+  const run = (toSarif({ ...sampleResult(), findings: [f], inventory: buildInventory([f]) }).runs[0]) as Record<
+    string,
+    any
+  >;
+  assert.equal(run.taxonomies, undefined);
+});
+
+test("toJson includes the cwe field", () => {
+  const f: Finding = {
+    ruleId: "r",
+    title: "t",
+    category: "signature",
+    severity: "high",
+    confidence: "high",
+    hndl: false,
+    message: "m",
+    cwe: "CWE-327",
+    location: { file: "a.ts", line: 1 },
+  };
+  const json = toJson({ ...sampleResult(), findings: [f], inventory: buildInventory([f]) });
+  const findings = json.findings as Array<Record<string, unknown>>;
+  assert.equal(findings[0].cwe, "CWE-327");
+});
+
 test("toJson returns a clean structured object", () => {
   const json = toJson(sampleResult());
   assert.equal(json.toolVersion, VERSION);
@@ -140,6 +205,7 @@ test("remediationFor covers every algorithm family", () => {
     "DH",
     "DSA",
     "X25519",
+    "X448",
     "ECIES",
     "unknown",
   ];

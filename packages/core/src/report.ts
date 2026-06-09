@@ -49,10 +49,13 @@ function sarifRank(severity: Severity): number {
 
 /** Serialize a scan result as SARIF 2.1.0. */
 export function toSarif(result: ScanResult): SarifLog {
-  // Build the unique rule set (one rule per ruleId encountered).
+  // Build the unique rule set (one rule per ruleId encountered) and collect the
+  // set of CWE taxa referenced by any rule.
   const ruleIndex = new Map<string, number>();
   const rules: Array<Record<string, unknown>> = [];
+  const cweTaxa = new Set<string>();
   for (const f of result.findings) {
+    if (f.cwe) cweTaxa.add(f.cwe);
     if (ruleIndex.has(f.ruleId)) continue;
     ruleIndex.set(f.ruleId, rules.length);
     rules.push({
@@ -68,7 +71,12 @@ export function toSarif(result: ScanResult): SarifLog {
         category: f.category,
         ...(f.algorithm ? { algorithm: f.algorithm } : {}),
         hndl: f.hndl,
+        ...(f.cwe ? { cwe: f.cwe, "security-severity": securitySeverity(f.severity) } : {}),
+        ...(f.cwe ? { tags: ["security", f.cwe] } : {}),
       },
+      ...(f.cwe
+        ? { relationships: [{ target: { id: f.cwe, toolComponent: { name: "CWE" } }, kinds: ["relevant"] }] }
+        : {}),
     });
   }
 
@@ -89,7 +97,17 @@ export function toSarif(result: ScanResult): SarifLog {
         hndl: f.hndl,
         ...(f.algorithm ? { algorithm: f.algorithm } : {}),
         ...(f.remediation ? { remediation: f.remediation } : {}),
+        ...(f.cwe ? { cwe: f.cwe } : {}),
       },
+      ...(f.cwe
+        ? {
+            taxa: [
+              {
+                target: { id: f.cwe, toolComponent: { name: "CWE" } },
+              },
+            ],
+          }
+        : {}),
       locations: [
         {
           physicalLocation: {
@@ -104,6 +122,22 @@ export function toSarif(result: ScanResult): SarifLog {
     };
   });
 
+  // CWE taxonomy component (SARIF taxonomies), referenced by rules + results.
+  const taxonomies =
+    cweTaxa.size > 0
+      ? [
+          {
+            name: "CWE",
+            informationUri: "https://cwe.mitre.org/",
+            organization: "MITRE",
+            shortDescription: { text: "The MITRE Common Weakness Enumeration" },
+            taxa: [...cweTaxa]
+              .sort()
+              .map((id) => ({ id, helpUri: `https://cwe.mitre.org/data/definitions/${id.replace(/^CWE-/, "")}.html` })),
+          },
+        ]
+      : [];
+
   return {
     $schema: SARIF_SCHEMA,
     version: "2.1.0",
@@ -117,10 +151,27 @@ export function toSarif(result: ScanResult): SarifLog {
             rules,
           },
         },
+        ...(taxonomies.length > 0 ? { taxonomies } : {}),
         results,
       },
     ],
   };
+}
+
+/** GitHub-code-scanning `security-severity` (0–10) derived from our severity. */
+function securitySeverity(severity: Severity): string {
+  switch (severity) {
+    case "critical":
+      return "9.5";
+    case "high":
+      return "8.0";
+    case "medium":
+      return "5.0";
+    case "low":
+      return "3.0";
+    default:
+      return "1.0";
+  }
 }
 
 /** Serialize a scan result as a plain JSON-friendly object. */
@@ -148,6 +199,7 @@ export function toJson(result: ScanResult): Record<string, unknown> {
       hndl: f.hndl,
       message: f.message,
       remediation: f.remediation,
+      cwe: f.cwe,
       location: {
         file: f.location.file,
         line: f.location.line,

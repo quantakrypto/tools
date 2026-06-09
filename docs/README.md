@@ -23,12 +23,39 @@ expert pass. They cite `file:line` and propose concrete fixes.
 | Performance | Hot path, complexity, parallelism, incremental scans | [audits/performance.md](audits/performance.md) |
 | Testing / DevEx | Coverage, CI, lint/format, OSS governance | [audits/testing-devex.md](audits/testing-devex.md) |
 
+## Security & threat model
+
+- **[THREAT-MODEL.md](THREAT-MODEL.md)** — assets, trust boundaries, data flows,
+  STRIDE per tool, the hosted-MCP and Sieve↔SUT boundaries, attacker scenarios,
+  and the mitigations→ROADMAP-P0 map. Companion to the [security audit](audits/security.md).
+
+## Architecture decisions & policies
+
+| Doc | What it covers |
+|---|---|
+| [adr/README.md](adr/README.md) | ADR index + template |
+| [adr/0001](adr/0001-zero-runtime-dependencies.md) | Zero runtime dependencies (Node built-ins only) |
+| [adr/0002](adr/0002-shared-core-contract.md) | `@qproof/core` is the single shared contract |
+| [adr/0003](adr/0003-monorepo-and-build.md) | npm-workspaces monorepo + `tsc -b` project references |
+| [adr/0004](adr/0004-sieve-no-fabricated-vectors.md) | Sieve ships no KAT vectors / never fabricates values |
+| [VERSIONING.md](VERSIONING.md) | SemVer + deprecation policy for `@qproof/*`; what's breaking on the core contract |
+| [CONFIG.md](CONFIG.md) | Spec for the optional `qproof.config.json` (schema + precedence) |
+
 ## Standards & compliance
 
 - **[COMPLIANCE.md](COMPLIANCE.md)** — what the tools touch / help align with /
   would need to certify against: NIST FIPS 203/204/205, SP 800-208, CNSA 2.0,
   SARIF, CWE, ISO/IEC 27001 (A.8.24), Common Criteria, FIPS 140-3, EU DORA/NIS2,
   US M-23-02 / NSM-10, and OSS-assurance (SLSA, OpenSSF Scorecard, SPDX/REUSE).
+- **[SUPPLY-CHAIN.md](SUPPLY-CHAIN.md)** — OpenSSF Scorecard + SLSA/npm provenance
+  + SPDX/REUSE: targets vs. current status, and the deferred npm-provenance plan.
+
+### Compliance designs (not yet implemented)
+
+| Doc | What it designs |
+|---|---|
+| [compliance/iso27001-a8.24-evidence.md](compliance/iso27001-a8.24-evidence.md) | A signed, timestamped A.8.24 "Use of cryptography" readiness-evidence report (scan + inventory + CBOM + attestation) |
+| [compliance/acvp-provenance.md](compliance/acvp-provenance.md) | How Sieve records provenance (source URL, hash, version) of operator-supplied NIST ACVP vectors |
 
 ## Per-package & protocol docs
 

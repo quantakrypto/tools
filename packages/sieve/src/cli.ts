@@ -23,6 +23,8 @@ interface CliOptions {
   timing: boolean;
   only?: string[];
   timeoutMs?: number;
+  pipelineDepth?: number;
+  inheritEnv: boolean;
   json: boolean;
 }
 
@@ -45,6 +47,11 @@ OPTIONS:
   --timing             Include the advisory (non-verdict) decaps timing probe.
   --only <a,b,...>     Run only these categories (comma-separated).
   --timeout-ms <N>     Per-request timeout in ms (default 10000).
+  --pipeline-depth <N> Max concurrent in-flight requests for independent-iteration
+                       categories (default 16). Use 1 for strictly serial.
+  --inherit-env        Pass the FULL parent environment to the SUT. DANGEROUS:
+                       the SUT is untrusted code; by default Sieve scrubs the env
+                       to a minimal allow-list. Only for trusted local impls.
   --json               Emit the report as JSON instead of human-readable text.
   -h, --help           Show this help.
 
@@ -60,6 +67,8 @@ function parseArgs(argv: readonly string[]): CliOptions {
   let timing = false;
   let only: string[] | undefined;
   let timeoutMs: number | undefined;
+  let pipelineDepth: number | undefined;
+  let inheritEnv = false;
   let json = false;
 
   for (let i = 0; i < argv.length; i++) {
@@ -110,6 +119,15 @@ function parseArgs(argv: readonly string[]): CliOptions {
         timeoutMs = n;
         break;
       }
+      case "--pipeline-depth": {
+        const n = Number(next());
+        if (!Number.isInteger(n) || n < 1) throw new UsageError("--pipeline-depth must be a positive integer");
+        pipelineDepth = n;
+        break;
+      }
+      case "--inherit-env":
+        inheritEnv = true;
+        break;
       case "--json":
         json = true;
         break;
@@ -134,6 +152,8 @@ function parseArgs(argv: readonly string[]): CliOptions {
     timing,
     ...(only ? { only } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    ...(pipelineDepth !== undefined ? { pipelineDepth } : {}),
+    inheritEnv,
     json,
   };
 }
@@ -158,6 +178,8 @@ async function main(): Promise<number> {
     timing: opts.timing,
     ...(opts.only ? { only: opts.only } : {}),
     ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    ...(opts.pipelineDepth !== undefined ? { pipelineDepth: opts.pipelineDepth } : {}),
+    ...(opts.inheritEnv ? { inheritEnv: true } : {}),
   });
 
   process.stdout.write((opts.json ? formatJson(report) : formatHuman(report)) + "\n");

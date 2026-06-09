@@ -1,7 +1,7 @@
 # @qproof/sieve
 
-**Conformance battery for ML-KEM (FIPS 203) and ML-DSA (FIPS 204)
-implementations.** Sieve drives *any* implementation through a small
+**Conformance battery for ML-KEM (FIPS 203), ML-DSA (FIPS 204), and SLH-DSA
+(FIPS 205) implementations.** Sieve drives *any* implementation through a small
 stdin/stdout JSON protocol and reports where it deviates from the standard.
 
 Zero runtime dependencies — Node built-ins only. Node ≥ 20, ESM.
@@ -9,7 +9,7 @@ Zero runtime dependencies — Node built-ins only. Node ≥ 20, ESM.
 ## What Sieve is (and is not)
 
 Sieve **tests other people's implementations**. It deliberately does **not**
-implement ML-KEM/ML-DSA, and it **never fabricates** cryptographic
+implement ML-KEM/ML-DSA/SLH-DSA, and it **never fabricates** cryptographic
 Known-Answer-Test values. Its power comes from two honest sources:
 
 1. **Tests that need no external vectors** — self-consistency, structural, and
@@ -19,8 +19,9 @@ Known-Answer-Test values. Its power comes from two honest sources:
    Sieve. See [`vectors/README.md`](./vectors/README.md).
 
 The only hard-coded cryptographic constants in Sieve are the **public,
-standardized parameter sizes** (e.g. ML-KEM-768 public key = 1184 bytes). Those
-are not secrets and not KAT values.
+standardized parameter sizes** (e.g. ML-KEM-768 public key = 1184 bytes;
+SLH-DSA-SHA2-128f signature = 17088 bytes, FIPS 205 Table 2). Those are not
+secrets and not KAT values.
 
 ## Install
 
@@ -107,12 +108,16 @@ sieve --impl "<command...>" --param <set> [options]
 
   --impl  "<cmd...>"   command Sieve spawns and drives (quote the whole thing)
   --param <set>        ml-kem-512 | ml-kem-768 | ml-kem-1024 |
-                       ml-dsa-44  | ml-dsa-65  | ml-dsa-87
+                       ml-dsa-44  | ml-dsa-65  | ml-dsa-87  |
+                       slh-dsa-{sha2,shake}-{128,192,256}{s,f}  (12 sets)
   --iterations <N>     randomized iterations (default 32)
   --vectors <dir>      official NIST ACVP vector dir for KAT (else SKIPPED)
   --timing             include the advisory decaps-timing probe
   --only <a,b,...>     run only these categories
   --timeout-ms <N>     per-request timeout (default 10000)
+  --pipeline-depth <N> max concurrent in-flight requests for independent-iteration
+                       categories (default 16; 1 = strictly serial)
+  --inherit-env        pass the FULL parent env to the SUT (DANGEROUS; see below)
   --json               machine-readable report
 
 exit: 0 = PASS, 1 = FAIL, 2 = usage error
@@ -140,10 +145,11 @@ process.exit(report.overall === "PASS" ? 0 : 1);
 | `correctness`        | ML-KEM  | —         | keygen→encaps(pk)→decaps(sk,ct) ⇒ `ss_encaps === ss_decaps` over N iterations. |
 | `determinism`        | ML-KEM  | —         | repeated `decaps(sk, ct)` returns identical `ss`. |
 | `implicit-rejection` | ML-KEM  | **AF-02** | `decaps` of a corrupted ct returns a valid-length `ss` with **no error/crash**, is deterministic, and differs from the honest `ss`. No exact-value assertions. |
-| `sizes`              | ML-KEM  | **AF-05** | emitted pk/sk/ct/ss lengths match the set; wrong-length pk/ct/sk are rejected with a defined error. |
+| `sizes`              | ML-KEM  | **AF-05** | emitted pk/sk/ct/ss lengths match the set; wrong-length pk/ct/sk are rejected with a defined error; **FIPS 203 §7.2 ek modulus-range check** — a correctly-sized-but-out-of-range encapsulation key (`t̂` coefficient ≥ q) is rejected. |
 | `robustness`         | ML-KEM  | AF-05     | empty / non-base64 / oversized inputs ⇒ defined error, never crash/silent-accept. |
-| `dsa`                | ML-DSA  | AF-05     | sign→verify ⇒ true; tampered message/signature ⇒ false; pk/sk/sig sizes; wrong-length verify input rejected. |
-| `kat`                | both    | —         | **SKIPPED** unless `--vectors <dir>` of official ACVP files is given; then checks decaps/seeded-keygen/seeded-encaps/sigVer against those exact expected values. Never fabricated. |
+| `dsa`                | ML-DSA  | AF-05     | sign→verify ⇒ true; tampered message/signature ⇒ false; wrong message ⇒ false; pk/sk/sig sizes for ml-dsa-44/65/87; wrong-length verify input rejected; **deterministic-vs-hedged signing advisory** (surfaced, never fails). |
+| `slh-dsa`            | SLH-DSA | AF-05     | same self-consistency surface as `dsa` for the 12 FIPS 205 parameter sets: sign→verify, tamper checks, pk/sk/sig sizes, signing-mode advisory, wrong-length verify rejection. |
+| `kat`                | all     | —         | **SKIPPED** unless `--vectors <dir>` of official ACVP files is given; then checks decaps/seeded-keygen/seeded-encaps/sigVer against those exact expected values. Never fabricated. |
 | `timing`             | ML-KEM  | (AF-02)   | **ADVISORY only.** Coarse decaps timing for valid vs. invalid ct. Reports a signal but never changes the verdict — cross-process timing is noisy and not proof of (non-)constant-time behavior. |
 
 The overall verdict is **FAIL** if any non-advisory category fails, else
@@ -167,7 +173,54 @@ See [`vectors/README.md`](./vectors/README.md) for sources and the file format.
 - **AF-02** — implicit-rejection / Fujisaki–Okamoto reject-path mistakes
   (erroring on bad ct, constant/unkeyed reject secrets, non-determinism).
 - **AF-05** — size/format confusion (accepting or emitting wrong-length
-  artifacts, crashing on malformed input).
+  artifacts, crashing on malformed input, accepting an out-of-range `ek`).
+
+## Security: the SUT runs with a scrubbed environment
+
+The SUT is **code you point Sieve at** — frequently a third-party or candidate
+implementation. Sieve drives it with the harness's own OS privileges, so by
+default Sieve spawns it with a **scrubbed, minimal environment**: only a small
+allow-list (`PATH`, `HOME`, `LANG`, locale/temp vars, plus Windows spawn
+essentials) is copied from the parent process. Harness secrets in the parent env
+— CI tokens, `NPM_TOKEN`, cloud credentials, signing keys — are **not**
+forwarded, so an untrusted SUT cannot read them.
+
+- Pass explicit variables your SUT needs with `env` (programmatic) — these are
+  layered on top of the scrubbed base.
+- Widen the allow-list with `envAllowlist` (copy named parent vars).
+- `--inherit-env` / `inheritEnv: true` restores the **full** parent environment.
+  Use it only for trusted, local implementations you control.
+
+Treat any non-trusted SUT as you would untrusted code generally — sandbox it
+(container / seccomp) if its provenance is unknown.
+
+## Throughput: bounded-concurrency pipelining
+
+The SUT protocol is **id-correlated** (each response echoes its request `id`), so
+independent requests can be in flight at once. Categories whose iterations are
+mutually independent (`correctness`, `determinism`, `dsa`, `slh-dsa`) pipeline up
+to `--pipeline-depth` (default 16) requests against the single SUT process; the
+results are reassembled in request order so the verdict is identical to a serial
+run. Dependent steps within one iteration (e.g. keygen→encaps→decaps for a single
+key) and order-sensitive categories (`timing`) stay strictly serial. Set
+`--pipeline-depth 1` to force the legacy serial behavior.
+
+## Algorithm scope
+
+Sieve drives the three **stateless** NIST PQC schemes: ML-KEM (FIPS 203), ML-DSA
+(FIPS 204), and SLH-DSA (FIPS 205). The 12 standardized SLH-DSA parameter sets
+(`slh-dsa-{sha2,shake}-{128,192,256}{s,f}`) are supported with size and
+self-consistency categories; their public byte sizes come from FIPS 205 Table 2.
+
+**Out of scope: SP 800-208 stateful hash signatures (LMS / XMSS / HSS).** These
+are deliberately *not* supported. Their security depends on **one-time use of
+each leaf key** — the signer must persist and advance secret state across signing
+operations, and reusing state catastrophically breaks the scheme. A stateless,
+request/response conformance harness like Sieve cannot model or verify the
+state-management guarantees that dominate SP 800-208 correctness; doing so safely
+requires a different, state-aware harness with durable per-key state tracking.
+LMS/XMSS are also intended for narrow uses (firmware/boot signing), not the
+general PQC migration Sieve targets.
 
 ## License
 

@@ -111,3 +111,44 @@ export function requireKem(s: { family: string }): KemSizes {
   }
   return s as KemSizes;
 }
+
+/**
+ * Run `task(i)` for i in [0, count) with at most `limit` running concurrently,
+ * returning results in index order. Used by categories whose ITERATIONS are
+ * mutually independent (each builds its own keypair), so several iteration
+ * chains can be in flight against the id-correlated SUT at once. Dependent
+ * steps WITHIN a single iteration remain serial inside `task`.
+ *
+ * `limit <= 1` degrades to strictly serial execution. See
+ * docs/audits/performance.md §7.1.
+ */
+export async function mapBounded<T>(
+  count: number,
+  limit: number,
+  task: (i: number) => Promise<T>,
+): Promise<T[]> {
+  const n = Math.max(0, count);
+  const cap = Math.max(1, Math.floor(limit));
+  const out: T[] = new Array(n);
+  let next = 0;
+  let firstError: Error | undefined;
+
+  const worker = async (): Promise<void> => {
+    while (firstError === undefined) {
+      const i = next++;
+      if (i >= n) return;
+      try {
+        out[i] = await task(i);
+      } catch (err) {
+        if (firstError === undefined) firstError = err as Error;
+        return;
+      }
+    }
+  };
+
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < Math.min(cap, n); w++) workers.push(worker());
+  await Promise.all(workers);
+  if (firstError !== undefined) throw firstError;
+  return out;
+}

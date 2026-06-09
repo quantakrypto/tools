@@ -16,10 +16,16 @@ import {
   pass,
   rollUp,
 } from "./types.js";
-import { bytesEqual, kemDecaps, kemEncaps, kemKeygen, requireKem, UnexpectedResponse } from "./helpers.js";
+import { bytesEqual, kemDecaps, kemEncaps, kemKeygen, mapBounded, requireKem, UnexpectedResponse } from "./helpers.js";
 import { toB64 } from "../protocol.js";
 
 const REPEATS = 3;
+
+/** Outcome of one determinism iteration. */
+type Outcome =
+  | { kind: "ok" }
+  | { kind: "unstable" }
+  | { kind: "error"; detail: string };
 
 export const determinism: Category = async (ctx): Promise<CategoryResult> => {
   const checks: Check[] = [];
@@ -37,42 +43,50 @@ export const determinism: Category = async (ctx): Promise<CategoryResult> => {
   let nondeterministic = 0;
   let errored = 0;
 
-  for (let i = 0; i < ctx.iterations; i++) {
-    try {
-      const { pk, sk } = await kemKeygen(ctx.runner, param);
-      const { ct } = await kemEncaps(ctx.runner, param, toB64(pk));
-      const skB64 = toB64(sk);
-      const ctB64 = toB64(ct);
+  // Iterations are independent → run concurrently (bounded). The REPEATS decaps
+  // calls within an iteration MUST stay serial: determinism is a property of
+  // repeated identical calls, so we issue them one after another on purpose.
+  const outcomes = await mapBounded<Outcome>(
+    ctx.iterations,
+    ctx.pipelineDepth ?? 16,
+    async (): Promise<Outcome> => {
+      try {
+        const { pk, sk } = await kemKeygen(ctx.runner, param);
+        const { ct } = await kemEncaps(ctx.runner, param, toB64(pk));
+        const skB64 = toB64(sk);
+        const ctB64 = toB64(ct);
 
-      const first = await kemDecaps(ctx.runner, param, skB64, ctB64);
-      let stable = true;
-      for (let r = 1; r < REPEATS; r++) {
-        const again = await kemDecaps(ctx.runner, param, skB64, ctB64);
-        if (!bytesEqual(first, again)) {
-          stable = false;
-          break;
+        const first = await kemDecaps(ctx.runner, param, skB64, ctB64);
+        for (let r = 1; r < REPEATS; r++) {
+          const again = await kemDecaps(ctx.runner, param, skB64, ctB64);
+          if (!bytesEqual(first, again)) return { kind: "unstable" };
         }
-      }
-      if (!stable) {
-        nondeterministic++;
-        if (nondeterministic <= 3) {
-          checks.push(
-            fail(
-              `decaps-stable[${i}]`,
-              `decaps(sk, ct) returned different shared secrets across ${REPEATS} identical calls`,
-            ),
-          );
-        }
-      }
-    } catch (err) {
-      errored++;
-      if (errored <= 3) {
+        return { kind: "ok" };
+      } catch (err) {
         const detail =
           err instanceof UnexpectedResponse
             ? `SUT returned an unexpected response: ${err.message}`
             : `harness error: ${(err as Error).message}`;
-        checks.push(fail(`decaps-stable[${i}]`, detail));
+        return { kind: "error", detail };
       }
+    },
+  );
+
+  for (let i = 0; i < outcomes.length; i++) {
+    const o = outcomes[i] as Outcome;
+    if (o.kind === "unstable") {
+      nondeterministic++;
+      if (nondeterministic <= 3) {
+        checks.push(
+          fail(
+            `decaps-stable[${i}]`,
+            `decaps(sk, ct) returned different shared secrets across ${REPEATS} identical calls`,
+          ),
+        );
+      }
+    } else if (o.kind === "error") {
+      errored++;
+      if (errored <= 3) checks.push(fail(`decaps-stable[${i}]`, o.detail));
     }
   }
 
