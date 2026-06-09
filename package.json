@@ -28,6 +28,7 @@
     "//test:coverage": "Node built-in coverage (P1-8). Globbing packages/*/test/*.test.ts from the root works because node --test expands the glob itself; tsx is loaded via --import so the TS sources run directly. If a future Node makes root globbing flaky, fall back to: npm run test:coverage --workspaces --if-present with a per-package script.",
     "test:coverage": "node --import tsx --test --experimental-test-coverage \"packages/*/test/*.test.ts\"",
     "bench": "node scripts/bench.mjs",
+    "validate:sarif": "node scripts/validate-sarif.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

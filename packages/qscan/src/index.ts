@@ -18,7 +18,7 @@ import { defaultOptions, meetsThreshold } from "./args.js";
 import type { QscanOptions } from "./args.js";
 import { renderCbom, renderHuman, renderJson, renderSarif } from "./report.js";
 
-export type { QscanOptions, ParsedArgs, QscanFormat } from "./args.js";
+export type { QscanOptions, ParsedArgs, ParsedRun, QscanFormat } from "./args.js";
 export type { Baseline } from "./baseline.js";
 export {
   ArgError,
@@ -45,6 +45,9 @@ export {
 } from "./baseline.js";
 export { renderCbom, renderHuman, renderJson, renderSarif } from "./report.js";
 export { HELP_TEXT, versionLine } from "./help.js";
+export { applyConfig, resolveConfig } from "./config.js";
+export type { ResolvedConfig } from "./config.js";
+export type { ConfigurableKey } from "./args.js";
 
 /** Process-style exit codes qScan uses. */
 export const EXIT = {

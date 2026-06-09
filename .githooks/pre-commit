@@ -1,0 +1,39 @@
+#!/bin/sh
+# qproof-tools pre-commit hook (zero-dependency; POSIX sh).
+#
+# Runs the same fast gates CI enforces, so a broken commit is caught locally
+# before it is pushed. Enable once per clone with:
+#
+#     git config core.hooksPath .githooks
+#
+# Skip a single commit (e.g. a WIP checkpoint) with `git commit --no-verify`.
+#
+# Type-aware ESLint needs the project built first, so the order is:
+#   build  →  lint  →  format:check  →  test
+#
+# Set QPROOF_PRECOMMIT_FAST=1 to skip the (slower) test run and gate on only
+# build + lint + format:check — handy for large, test-heavy commits.
+
+set -e
+
+# Resolve the repo root so the hook works regardless of the invoking CWD.
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+echo "pre-commit: build…"
+npm run build
+
+echo "pre-commit: lint…"
+npm run lint
+
+echo "pre-commit: format:check…"
+npm run format:check
+
+if [ "${QPROOF_PRECOMMIT_FAST:-0}" = "1" ]; then
+  echo "pre-commit: QPROOF_PRECOMMIT_FAST=1 set — skipping tests."
+else
+  echo "pre-commit: test…"
+  npm test
+fi
+
+echo "pre-commit: all checks passed."

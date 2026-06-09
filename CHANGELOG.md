@@ -31,6 +31,18 @@ dependencies.
   Scorecard + release workflows, `REUSE.toml`, threat model, ADRs, SemVer
   policy, config spec, and ISO 27001 A.8.24 / ACVP-provenance designs.
 
+#### Follow-ups landed (previously documented designs)
+
+- **core/qscan:** `qproof.config.json` support — `loadConfig` in core plus
+  flags > config > defaults precedence in qScan, with `--config <path>` and
+  `--no-config-file` (distinct from the `--no-config` *detector* toggle). [P2-9]
+- **tests:** deterministic, seeded-PRNG fuzz targets for the hand-rolled parsers
+  — manifest/dependency parsing + `toSarif` (core), `decodeResponse`/`fromB64`
+  (sieve), and the argv parser (qscan), in each package's `test/fuzz.test.ts`. [P1-10]
+- **repo:** a zero-dep `.githooks/pre-commit` hook (build → lint → format:check →
+  test) [P2-5]; `scripts/validate-sarif.mjs` SARIF 2.1.0 structural validator +
+  `validate:sarif` script [P2-6]; and advisory `bench` + gating `sarif` CI jobs.
+
 ### Fixed (security & correctness)
 
 - EC key generation is now classified as key-exchange-capable (harvest-now

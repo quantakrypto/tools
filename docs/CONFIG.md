@@ -1,10 +1,11 @@
-# `qproof.config.json` — Configuration Spec
+# `qproof.config.json` — Configuration
 
-**Status: SPECIFICATION ONLY.** This document describes an *optional* project
-configuration file that `qScan` and `@qproof/core` would consume. It is a design
-spec for [ROADMAP P2-9](ROADMAP.md); **nothing here is implemented**, and it does
-not change current behavior. The goal is to capture the schema, precedence, and
-semantics so the implementation is a faithful build, not a fresh design.
+**Status: IMPLEMENTED** ([ROADMAP P2-9](ROADMAP.md)). This document describes the
+*optional* project configuration file that `qScan` and `@qproof/core` consume.
+core's `loadConfig` reads + validates the file; qScan applies it under the
+precedence rule below. This page is both the spec and the reference; where the
+implementation narrows a "proposed" detail (see notes inline), the behavior here
+is authoritative.
 
 ## 1. Motivation
 
@@ -18,11 +19,17 @@ and local runs agree without repeating long flag lists.
 
 ## 2. Discovery
 
-- File name: **`qproof.config.json`**, discovered by walking up from the scan
-  `root` (then the CWD) to the first match, stopping at a `.git` boundary or
-  filesystem root.
-- A `--config <path>` flag (proposed) overrides discovery and names the file
-  explicitly. `--no-config` disables discovery entirely.
+- File name: **`qproof.config.json`**, discovered at the scan `root` (i.e.
+  `<root>/qproof.config.json`). An absent file is tolerated — the scan proceeds
+  on flags + defaults. *(The implementation looks at the scan root directly
+  rather than walking up the tree; root-relative discovery is simpler and
+  auditable, and `--config` covers the "config lives elsewhere" case.)*
+- A `--config <path>` flag overrides discovery and names the file explicitly; a
+  missing explicitly-named file is a usage error (exit 2).
+- `--no-config-file` disables discovery entirely. **Note the naming:** the file
+  controls are `--config` / `--no-config-file`, deliberately distinct from the
+  pre-existing `--no-config` flag, which toggles config/TLS *detector scanning*
+  (a different concern). They do not collide.
 - Exactly **one** config file applies per run; configs do **not** merge across
   directories (no cascading), to keep precedence simple and auditable.
 
@@ -115,14 +122,15 @@ detector set by declared language (e.g. `["python","go"]`).
 
 ## 5. Interaction with baselines and CI
 
-- `baseline` in the config is equivalent to passing `--baseline`; `--write-baseline`
-  remains CLI-only (it is an action, not config state).
-- In CI, committing `qproof.config.json` lets the [Action](../packages/action/README.md)
-  and a local `qscan` run share one policy. The Action would read the same file
-  (its `path`/`severity-threshold`/`baseline` inputs still take precedence as
-  "flags" in the §3 order).
-- The MCP server, when scanning a workspace, would honor a discovered config so an
-  agent's view matches CI's.
+- `baseline` in the config is equivalent to passing `--baseline` (resolved
+  relative to the config file's directory); `--write-baseline` remains CLI-only
+  (it is an action, not config state).
+- In CI, committing `qproof.config.json` lets a local `qscan` run and CI share
+  one policy. The [Action](../packages/action/README.md) reuses `runQscan`; its
+  inputs still take precedence as "flags" in the §3 order. (Auto-discovery from
+  the Action's own inputs is a follow-on; the qScan CLI honors the file today.)
+- The MCP server, when scanning a workspace, can honor a discovered config via
+  the same `loadConfig` helper so an agent's view matches CI's.
 
 ## 6. Validation
 

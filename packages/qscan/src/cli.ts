@@ -13,8 +13,11 @@ import { writeFile } from "node:fs/promises";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
+import { ConfigError } from "@qproof/core";
+
 import { ArgError, parseArgs } from "./args.js";
-import type { ParsedArgs } from "./args.js";
+import type { ParsedArgs, QscanOptions } from "./args.js";
+import { resolveConfig } from "./config.js";
 import { HELP_TEXT, versionLine } from "./help.js";
 import { EXIT, runQscan } from "./index.js";
 import type { QscanRun } from "./index.js";
@@ -42,7 +45,28 @@ export async function main(argv: readonly string[]): Promise<number> {
     return EXIT.OK;
   }
 
-  const { options } = parsed;
+  // Resolve `qproof.config.json` (flags > config > defaults) before scanning.
+  let options: QscanOptions;
+  try {
+    const resolved = await resolveConfig(parsed.options, parsed.explicit);
+    options = resolved.options;
+    if (!options.quiet) {
+      for (const w of resolved.warnings) {
+        process.stderr.write(`qscan: config warning: ${w}\n`);
+      }
+      if (resolved.configPath) {
+        process.stderr.write(`qscan: using config ${resolved.configPath}\n`);
+      }
+    }
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      process.stderr.write(`qscan: ${err.message}\n`);
+      return EXIT.ERROR;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`qscan: ${message}\n`);
+    return EXIT.ERROR;
+  }
 
   // Color only when writing the human report to an interactive stdout.
   const color =

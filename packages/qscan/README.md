@@ -46,7 +46,9 @@ qscan [path] [options]
 | `--severity-threshold <level>` | Exit 1 if any finding is at/above this level. One of `critical`, `high`, `medium`, `low`, `info`. | `high` |
 | `--no-source` | Skip scanning source files for inline crypto. | scan on |
 | `--no-deps` | Skip scanning dependency manifests. | scan on |
-| `--no-config` | Skip scanning config files (TLS/certificates). | scan on |
+| `--no-config` | Skip scanning config files (TLS/certificates). Toggles config *detectors* — not the config file below. | scan on |
+| `--config <path>` | Use this `qproof.config.json` instead of auto-discovering one at the scan root. | auto |
+| `--no-config-file` | Disable `qproof.config.json` auto-discovery. | discovery on |
 | `--ignore <pattern>` | Exclude paths matching `<pattern>`. Repeatable. | — |
 | `--include <pattern>` | Restrict the scan to paths matching `<pattern>`. Repeatable. | all files |
 | `--max-file-size <bytes>` | Skip files larger than `<bytes>`. | 2 MiB |
@@ -69,6 +71,16 @@ qscan [path] [options]
 | `0` | No findings at/above the threshold — or a baseline was written. |
 | `1` | One or more findings at/above the severity threshold. |
 | `2` | Usage error or I/O failure. |
+
+### Config file (`qproof.config.json`)
+
+qScan auto-discovers a `qproof.config.json` at the scan root and applies it
+under a strict precedence: **CLI flags > config file > built-in defaults**
+(per-key). It encodes `include` / `exclude` / `maxFileSize` / `noDefaultIgnores`
+/ `scanMinified`, the detector-family toggles, `severityThreshold`, and a
+`baseline` path so CI and local runs share one policy. Point at a file elsewhere
+with `--config <path>`, or disable discovery with `--no-config-file`. See
+[docs/CONFIG.md](../../docs/CONFIG.md) for the full schema.
 
 ## Example output
 

@@ -29,6 +29,21 @@ npm test           # node:test across all packages
 Source lives in `packages/*/src`; tests are `node:test` files in
 `packages/*/test/*.test.ts` (run on `.ts` via `tsx`).
 
+### Enable git hooks
+
+A zero-dependency pre-commit hook lives in `.githooks/`. It runs the same gates
+as CI (`build` → `lint` → `format:check` → `test`) so problems surface before
+you push. Opt in once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+On a fresh checkout the hook file may need the executable bit
+(`chmod +x .githooks/pre-commit`). For a large, test-heavy commit you can gate
+on only build + lint + format:check with `QPROOF_PRECOMMIT_FAST=1 git commit`,
+or skip the hook entirely for a WIP checkpoint with `git commit --no-verify`.
+
 ## Conventions
 
 - **TypeScript strict**, ESM, `module: NodeNext` — **relative imports must end

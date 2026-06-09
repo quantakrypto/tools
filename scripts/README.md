@@ -55,6 +55,33 @@ npm run bench -- --files=4000 --runs=5 --concurrency=8
 - The generated tree lives under the OS temp dir and is removed on exit unless
   `--keep` is passed.
 
+## `validate-sarif.mjs` — SARIF 2.1.0 structural validator (P2-6)
+
+Asserts the load-bearing SARIF 2.1.0 structure that consumers (GitHub code
+scanning, etc.) rely on, exiting non-zero with a clear, pathed message on the
+first batch of violations.
+
+```bash
+npm run validate:sarif -- path/to/report.sarif.json   # validate a file
+npm run validate:sarif                                  # scan ./packages, then
+                                                        # produce + validate
+```
+
+It checks: `$schema`, `version === "2.1.0"`, a non-empty `runs[]`, each run's
+`tool.driver.name` and `rules[]` (each rule has a non-empty `id`), and each
+result's `ruleId`, `level` (`error|warning|note|none`), `message.text`, and
+`locations[].physicalLocation.artifactLocation.uri`.
+
+> **Honest scope:** this is a *structural* check, **not** full JSON-Schema
+> validation against the official `sarif-schema-2.1.0.json`. Doing that would
+> require a JSON-Schema engine, and this repo is zero-dependency. The check
+> catches the field-presence/type mistakes that actually break consumers.
+
+The no-argument mode imports the **built** `@qproof/core` (run `npm run build`
+first) to scan `packages/` and validate the SARIF it emits — this is what the
+CI **sarif** job runs end-to-end. CI invokes it directly against a produced
+file: `node scripts/validate-sarif.mjs /tmp/q.sarif.json`.
+
 ## Coverage
 
 There is no script file here for coverage — it is a one-liner wired directly in

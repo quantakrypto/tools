@@ -27,6 +27,9 @@ OPTIONS
   --no-source                   Skip scanning source files for inline crypto
   --no-deps                     Skip scanning dependency manifests
   --no-config                   Skip scanning config files (TLS/certificates)
+  --config <path>               Use this qproof.config.json instead of
+                                auto-discovering one at the scan root
+  --no-config-file              Disable qproof.config.json auto-discovery
   --ignore <pattern>            Exclude paths matching <pattern> (repeatable)
   --include <pattern>           Restrict the scan to matching paths (repeatable)
   --max-file-size <bytes>       Skip files larger than <bytes> (default: 2 MiB)
@@ -54,6 +57,7 @@ EXAMPLES
   qscan . --write-baseline qscan-baseline.json
   qscan . --baseline qscan-baseline.json
   qscan . --include src --include lib
+  qscan . --config ./ci/qproof.config.json
   qscan . --changed --since origin/main
   qscan . --parallel --concurrency 4
   qscan . --cbom -o qscan-cbom.json

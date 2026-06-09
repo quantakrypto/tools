@@ -79,3 +79,40 @@ jobs:
       # qScan correctly matches the crypto PATTERNS embedded in the detectors'
       # own source (e.g. the PEM regex), so a non-zero exit here is expected.
       - run: node packages/qscan/dist/cli.js packages || true
+
+  bench:
+    name: scan benchmark (node 20, advisory)
+    runs-on: ubuntu-latest
+    needs: build-test
+    # Advisory: timings are noisy on shared CI runners, so this never gates.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Benchmark (serial vs parallel scan)
+        run: npm run bench
+
+  sarif:
+    name: SARIF structural validation (node 20)
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Produce a SARIF report (self-scan)
+        # The self-scan finds the crypto patterns in our own detector sources, so
+        # qScan exits 1 (findings) — that is expected here; we only need the file
+        # written. `|| true` keeps the step green; validation is the real gate.
+        run: node packages/qscan/dist/cli.js packages --format sarif -o /tmp/q.sarif.json || true
+      - name: Validate the SARIF 2.1.0 structure
+        run: node scripts/validate-sarif.mjs /tmp/q.sarif.json

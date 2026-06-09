@@ -71,13 +71,47 @@ export interface QscanOptions {
   writeBaseline?: string;
   /** Suppress the human summary banner (still writes reports/output files). */
   quiet: boolean;
+  /**
+   * Explicit path to a `qproof.config.json` (`--config <path>`). Overrides
+   * auto-discovery at the scan root. Distinct from `--no-config`, which toggles
+   * config/TLS *detector* scanning — this names the config FILE.
+   */
+  configFile?: string;
+  /**
+   * Disable `qproof.config.json` auto-discovery (`--no-config-file`). Distinct
+   * from `--no-config` (which skips config-file *detectors*).
+   */
+  noConfigFile: boolean;
+}
+
+/**
+ * Option keys that a `qproof.config.json` may also set. When such a key was set
+ * by a CLI flag, the flag wins (precedence: flags > config > defaults); when it
+ * was left at its default, config may fill it. {@link parseArgs} records which
+ * of these keys came from an explicit flag in {@link ParsedRun.explicit}.
+ */
+export type ConfigurableKey =
+  | "severityThreshold"
+  | "source"
+  | "dependencies"
+  | "config"
+  | "include"
+  | "ignore"
+  | "maxFileSize"
+  | "noDefaultIgnores"
+  | "scanMinified"
+  | "baseline";
+
+/** A successful parse: resolved options plus which configurable keys were explicit. */
+export interface ParsedRun {
+  kind: "run";
+  options: QscanOptions;
+  /** The set of {@link ConfigurableKey}s the user set via a flag. */
+  explicit: Set<ConfigurableKey>;
 }
 
 /** Result of {@link parseArgs}: either resolved options or a meta action. */
-export type ParsedArgs =
-  | { kind: "run"; options: QscanOptions }
-  | { kind: "help" }
-  | { kind: "version" };
+export type ParsedArgs = ParsedRun | { kind: "help" } | { kind: "version" };
 
 /** Thrown on malformed input; the CLI maps this to exit code 2. */
 export class ArgError extends Error {
@@ -100,6 +134,7 @@ export function defaultOptions(): QscanOptions {
     changed: false,
     parallel: false,
     quiet: false,
+    noConfigFile: false,
   };
 }
 
@@ -110,6 +145,7 @@ export function defaultOptions(): QscanOptions {
  */
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   const options = defaultOptions();
+  const explicit = new Set<ConfigurableKey>();
   let positional: string | undefined;
 
   // Manual index walk so flags can consume the following token as a value.
@@ -156,32 +192,50 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         break;
       case "--severity-threshold":
         options.severityThreshold = asSeverity(takeValue());
+        explicit.add("severityThreshold");
         break;
 
       case "--no-source":
         options.source = false;
+        explicit.add("source");
         break;
       case "--no-deps":
         options.dependencies = false;
+        explicit.add("dependencies");
         break;
       case "--no-config":
         options.config = false;
+        explicit.add("config");
         break;
 
       case "--ignore":
         options.ignore.push(takeValue());
+        explicit.add("ignore");
         break;
       case "--include":
         options.include.push(takeValue());
+        explicit.add("include");
         break;
       case "--max-file-size":
         options.maxFileSize = asInt(takeValue(), "--max-file-size");
+        explicit.add("maxFileSize");
         break;
       case "--no-default-ignores":
         options.noDefaultIgnores = true;
+        explicit.add("noDefaultIgnores");
         break;
       case "--scan-minified":
         options.scanMinified = true;
+        explicit.add("scanMinified");
+        break;
+
+      // `qproof.config.json` FILE controls (distinct from `--no-config`, which
+      // toggles config/TLS *detector* scanning above).
+      case "--config":
+        options.configFile = takeValue();
+        break;
+      case "--no-config-file":
+        options.noConfigFile = true;
         break;
 
       case "--changed":
@@ -202,6 +256,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 
       case "--baseline":
         options.baseline = takeValue();
+        explicit.add("baseline");
         break;
       case "--write-baseline":
         options.writeBaseline = takeValue();
@@ -225,7 +280,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   }
 
   if (positional !== undefined) options.path = positional;
-  return { kind: "run", options };
+  return { kind: "run", options, explicit };
 }
 
 /** Validate/normalize a `--format` value. */

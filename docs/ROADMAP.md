@@ -26,10 +26,14 @@ Sources: [security](audits/security.md) · [cryptography](audits/cryptography.md
 >   tags; Scorecard + release workflows + REUSE; SLH-DSA (FIPS 205) + ISO 27001
 >   A.8.24 / ACVP-provenance designs; ADRs + SemVer policy + config spec.
 >
-> **Remaining as documented designs / deliberate follow-ups** (not blockers):
-> fuzz-target *implementation* (P1-10 is designed), pre-commit hooks (P2-5),
-> SARIF-schema-validation CI step (P2-6), and `qproof.config.json` *implementation*
-> (P2-9 — spec-only by design). Publishing remains deferred (§5).
+> **Follow-ups now landed** (previously documented designs): ✅ fuzz-target
+> *implementation* (P1-10 — deterministic, seeded fuzz of the manifest/SARIF,
+> Sieve protocol/base64, and qScan-args parsers); ✅ pre-commit hooks (P2-5 —
+> `.githooks/pre-commit`); ✅ SARIF structural-validation CI step (P2-6 —
+> `scripts/validate-sarif.mjs` + a `sarif` CI job); ✅ an advisory `bench` CI
+> job (P2-4); and ✅ `qproof.config.json` *implementation* (P2-9 — `loadConfig`
+> in core + flags-over-config-over-defaults precedence in qScan). Publishing
+> remains deferred (§5).
 >
 > The detailed P0/P1/P2 tables below are retained as the historical record of
 > what each item entailed.
@@ -47,15 +51,15 @@ below are improvements and gaps — not regressions.
 | CI | GitHub Actions: build + test on Node 20/22, self-scan dogfood | ✅ **added** (`.github/workflows/ci.yml`) |
 | Docs | Discipline audits, compliance mapping, docs index, README badges | ✅ **added** |
 | Quality | Code coverage tooling + gate | ✅ **done** (`test:coverage`, advisory CI job) |
-| Quality | ESLint + Prettier | ✅ **done** (commit hooks: follow-up) |
+| Quality | ESLint + Prettier | ✅ **done** (pre-commit hook: `.githooks/pre-commit`) |
 | Tests | Real `core.scan()` over a real tree | ✅ **done** (core `scan.test.ts` + bench parity) |
 | Tests | Coverage for `mcp/http.ts`, the action PR-comment path, runner timeouts | ✅ **done** |
 | Crypto | SLH-DSA (FIPS 205) conformance in Sieve | ✅ **done** (SP 800-208: documented out-of-scope) |
 | Crypto | Detectors for DH groups, SSH keys, TLS cert sig algs, JOSE/COSE | ✅ **done** |
-| Perf | Benchmark harness | ✅ **done** (`scripts/bench.mjs`; perf-regression CI: follow-up) |
+| Perf | Benchmark harness | ✅ **done** (`scripts/bench.mjs`; advisory `bench` CI job) |
 | Perf | Parallel (worker pool) + incremental (changed-files) scanning | ✅ **done** (`scanParallel`, `--changed`) |
-| Security | Threat-model doc | ✅ **done** (fuzz-target impl: designed, follow-up) |
-| Compliance | CBOM (CycloneDX) output, CWE tagging | ✅ **done** (SARIF-schema CI check: follow-up) |
+| Security | Threat-model doc | ✅ **done** (+ deterministic fuzz targets, P1-10) |
+| Compliance | CBOM (CycloneDX) output, CWE tagging | ✅ **done** (+ SARIF structural CI check, P2-6) |
 | Supply chain | OpenSSF Scorecard, SLSA provenance, REUSE | ✅ **done** (workflows + `REUSE.toml`) |
 | Release | Commit/bundle the Action `dist/`; npm publish under `@qproof` | ⏸ deferred (see §5) |
 
@@ -89,7 +93,7 @@ These are confirmed bugs or real risks, each cited to source.
 | P1-7 | **Sieve depth.** Add the FIPS 203 §7.2 encapsulation-key modulus-range check (deepens AF-05), deeper ML-DSA probes, and a deterministic-vs-hedged signing test. | sieve | cryptography | M |
 | P1-8 | **Real integration test.** qScan's e2e runs through a `fakeScan` — add a test that runs the real `core.scan()` over a fixture tree. Add tests for `mcp/http.ts`, the action PR-comment path, and runner timeout/crash escalation. Add coverage tooling (`node --test --experimental-test-coverage`) + a CI gate. | all | testing | M |
 | P1-9 | **Cheap perf wins.** Precompile the ~16 per-file inline regexes at module scope; skip minified/generated files beyond `.min.js`/`.map` (`walk.ts:79-85`); handle lockfiles > 2 MiB instead of silently skipping (`walk.ts:159`). | core | performance | S |
-| P1-10 | **Threat model doc** + fuzz targets for the four hand-rolled parsers (Sieve protocol/base64, manifest, SARIF, qScan args). | all | security/testing | M |
+| P1-10 | **Threat model doc** + fuzz targets for the four hand-rolled parsers (Sieve protocol/base64, manifest, SARIF, qScan args). ✅ Fuzz targets landed: deterministic seeded-PRNG fuzz in each package's `test/fuzz.test.ts`. | all | security/testing | M |
 
 ---
 
@@ -101,11 +105,11 @@ These are confirmed bugs or real risks, each cited to source.
 | P2-2 | Incremental scanning: `git diff --name-only` changed-files mode + per-file hash cache (big CI win). | core/qscan | performance |
 | P2-3 | Sieve throughput: pipeline / bounded-concurrency pool over the id-correlated protocol. | sieve | performance |
 | P2-4 | Benchmark harness (zero-dep) + a perf-regression CI check on representative corpora. | all | performance |
-| P2-5 | ESLint flat config + typescript-eslint (`no-floating-promises` for the async transports), Prettier, commit hooks. | all | testing |
-| P2-6 | **CBOM** (CycloneDX cryptographic bill of materials) output from the inventory; CWE tagging on findings; SARIF schema validation in CI. | core/compliance | compliance |
+| P2-5 | ESLint flat config + typescript-eslint (`no-floating-promises` for the async transports), Prettier, commit hooks. ✅ Pre-commit hook in `.githooks/pre-commit`. | all | testing |
+| P2-6 | **CBOM** (CycloneDX cryptographic bill of materials) output from the inventory; CWE tagging on findings; SARIF schema validation in CI. ✅ `scripts/validate-sarif.mjs` (structural) + a `sarif` CI job. | core/compliance | compliance |
 | P2-7 | OpenSSF Scorecard workflow, SLSA build provenance, SPDX/REUSE license headers, npm publish provenance. | repo | compliance/testing |
 | P2-8 | ISO/IEC 27001 **A.8.24 evidence-chain** export (a signed, timestamped readiness report); ACVP vector-provenance pipeline; SLH-DSA (FIPS 205) conformance category. | core/sieve | compliance/crypto |
-| P2-9 | Semver + deprecation policy, a generated public API reference, and ADRs; an optional `qproof.config.json`. | all | architecture |
+| P2-9 | Semver + deprecation policy, a generated public API reference, and ADRs; an optional `qproof.config.json`. ✅ `qproof.config.json` implemented: `loadConfig` in core, flags > config > defaults in qScan (see [CONFIG.md](CONFIG.md)). | all | architecture |
 
 ---
 
