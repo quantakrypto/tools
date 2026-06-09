@@ -39,10 +39,7 @@ test("walkFiles skips default ignores and binaries", async () => {
     const files = await collect(walkFiles(dir));
     assert.deepEqual(files, ["a.ts", "legacy/old.ts", "src/b.js"]);
     assert.ok(!files.includes("logo.png"), "binary extension skipped");
-    assert.ok(
-      !files.some((f) => f.startsWith("node_modules/")),
-      "node_modules ignored",
-    );
+    assert.ok(!files.some((f) => f.startsWith("node_modules/")), "node_modules ignored");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

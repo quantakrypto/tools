@@ -65,9 +65,16 @@ if (parentPort) {
         );
       }
 
-      port.postMessage({ index: req.index, files: scannedNames, result: { findings, filesScanned } });
+      port.postMessage({
+        index: req.index,
+        files: scannedNames,
+        result: { findings, filesScanned },
+      });
     } catch (err) {
-      port.postMessage({ index: req.index, error: err instanceof Error ? err.message : String(err) });
+      port.postMessage({
+        index: req.index,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 }

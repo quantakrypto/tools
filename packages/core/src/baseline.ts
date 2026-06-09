@@ -104,10 +104,7 @@ export async function loadBaseline(path: string): Promise<Baseline> {
  * Write a baseline derived from the given findings to disk as pretty JSON
  * (trailing newline). Returns the baseline that was written.
  */
-export async function saveBaseline(
-  path: string,
-  findings: readonly Finding[],
-): Promise<Baseline> {
+export async function saveBaseline(path: string, findings: readonly Finding[]): Promise<Baseline> {
   const baseline = baselineFromFindings(findings);
   await writeFile(path, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
   return baseline;

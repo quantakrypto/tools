@@ -50,7 +50,9 @@ export async function changedFiles(root: string, since?: string): Promise<string
   const out = new Set<string>();
 
   if (since) {
-    for (const f of toLines(await git(root, ["diff", "--name-only", "--diff-filter=ACMR", since]))) {
+    for (const f of toLines(
+      await git(root, ["diff", "--name-only", "--diff-filter=ACMR", since]),
+    )) {
       out.add(f);
     }
   }
@@ -59,7 +61,9 @@ export async function changedFiles(root: string, since?: string): Promise<string
   for (const f of toLines(await git(root, ["diff", "--name-only", "--diff-filter=ACMR"]))) {
     out.add(f);
   }
-  for (const f of toLines(await git(root, ["diff", "--name-only", "--diff-filter=ACMR", "--cached"]))) {
+  for (const f of toLines(
+    await git(root, ["diff", "--name-only", "--diff-filter=ACMR", "--cached"]),
+  )) {
     out.add(f);
   }
 

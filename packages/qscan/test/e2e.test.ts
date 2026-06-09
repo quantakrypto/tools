@@ -67,7 +67,11 @@ async function makeFixture(): Promise<string> {
   );
 
   // A clean file with no crypto, to confirm it produces no findings.
-  await writeFile(join(root, "src", "util.ts"), "export const add = (a: number, b: number) => a + b;\n", "utf8");
+  await writeFile(
+    join(root, "src", "util.ts"),
+    "export const add = (a: number, b: number) => a + b;\n",
+    "utf8",
+  );
 
   return root;
 }
@@ -166,7 +170,12 @@ test("e2e: baseline written on one run suppresses everything on the next", async
     assert.ok((write.baselineWritten?.fingerprints.length ?? 0) >= 3);
 
     const second = await runQscan(
-      { path: root, baseline: baselinePath, severityThreshold: "high", ignore: ["qscan-baseline.json"] },
+      {
+        path: root,
+        baseline: baselinePath,
+        severityThreshold: "high",
+        ignore: ["qscan-baseline.json"],
+      },
       { scanFn: fakeScan },
     );
     assert.equal(second.result.findings.length, 0, "all findings suppressed");

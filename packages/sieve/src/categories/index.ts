@@ -49,14 +49,4 @@ export function categoriesFor(family: Family, includeTiming: boolean): Registere
   );
 }
 
-export {
-  correctness,
-  determinism,
-  implicitRejection,
-  sizes,
-  robustness,
-  dsa,
-  slhDsa,
-  kat,
-  timing,
-};
+export { correctness, determinism, implicitRejection, sizes, robustness, dsa, slhDsa, kat, timing };

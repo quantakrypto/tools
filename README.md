@@ -5,7 +5,7 @@
 ![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178c6)
 ![Runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-success)
-![Tests: 182 passing](https://img.shields.io/badge/tests-182%20passing-brightgreen)
+![Tests: 307 passing](https://img.shields.io/badge/tests-307%20passing-brightgreen)
 [![NIST FIPS 203/204/205](https://img.shields.io/badge/NIST-FIPS%20203%2F204%2F205-7c3aed)](docs/COMPLIANCE.md)
 
 Open-source post-quantum readiness tooling by [qproof](https://qproof.com/tools).

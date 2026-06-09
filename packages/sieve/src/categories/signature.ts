@@ -32,11 +32,7 @@ import {
 } from "./types.js";
 import { flipBitB64, zerosB64 } from "./helpers.js";
 import { fromB64, toB64, type Response, type SignatureFamily } from "../protocol.js";
-import {
-  asSignatureSizes,
-  type ParamSet,
-  type SignatureSizes,
-} from "../sizes.js";
+import { asSignatureSizes, type ParamSet, type SignatureSizes } from "../sizes.js";
 
 const BUG_SIZE = "AF-05" as const;
 
@@ -83,8 +79,16 @@ async function runSignature(
     const sk = fromB64(skB64);
     checks.push(
       pk.length === d.publicKey
-        ? pass("pk-length", `verification key ${pk.length} bytes (expected ${d.publicKey})`, BUG_SIZE)
-        : fail("pk-length", `verification key ${pk.length} bytes, expected ${d.publicKey}`, BUG_SIZE),
+        ? pass(
+            "pk-length",
+            `verification key ${pk.length} bytes (expected ${d.publicKey})`,
+            BUG_SIZE,
+          )
+        : fail(
+            "pk-length",
+            `verification key ${pk.length} bytes, expected ${d.publicKey}`,
+            BUG_SIZE,
+          ),
     );
     checks.push(
       sk.length === d.secretKey
@@ -128,7 +132,11 @@ async function runSignature(
       sigLenOk++;
     } else if (i < 3) {
       checks.push(
-        fail(`sig-length[${i}]`, `signature ${sig.length} bytes, expected ${d.signature}`, BUG_SIZE),
+        fail(
+          `sig-length[${i}]`,
+          `signature ${sig.length} bytes, expected ${d.signature}`,
+          BUG_SIZE,
+        ),
       );
     }
 
@@ -170,13 +178,23 @@ async function runSignature(
       checks.push(pass("sign-verify", `${goodVerify}/${attempts} signatures verified`));
     }
     if (tamperMsgCaught === attempts) {
-      checks.push(pass("tamper-msg", `${tamperMsgCaught}/${attempts} altered-message forgeries rejected`));
+      checks.push(
+        pass("tamper-msg", `${tamperMsgCaught}/${attempts} altered-message forgeries rejected`),
+      );
     }
     if (tamperSigCaught === attempts) {
-      checks.push(pass("tamper-sig", `${tamperSigCaught}/${attempts} altered-signature forgeries rejected`));
+      checks.push(
+        pass("tamper-sig", `${tamperSigCaught}/${attempts} altered-signature forgeries rejected`),
+      );
     }
     if (sigLenOk === attempts) {
-      checks.push(pass("sig-length", `all ${sigLenOk} signatures had the expected ${d.signature} bytes`, BUG_SIZE));
+      checks.push(
+        pass(
+          "sig-length",
+          `all ${sigLenOk} signatures had the expected ${d.signature} bytes`,
+          BUG_SIZE,
+        ),
+      );
     }
   }
 
@@ -299,10 +317,18 @@ async function expectVerifyReject(
       // Returning a false verdict for malformed input is also acceptable.
       checks.push(pass(name, "wrong-length input verified as false (acceptable)", BUG_SIZE));
     } else {
-      checks.push(fail(name, "SUT accepted a wrong-length verify input and verified true", BUG_SIZE));
+      checks.push(
+        fail(name, "SUT accepted a wrong-length verify input and verified true", BUG_SIZE),
+      );
     }
   } catch (err) {
-    checks.push(fail(name, `SUT crashed/hung on wrong-length verify input: ${(err as Error).message}`, BUG_SIZE));
+    checks.push(
+      fail(
+        name,
+        `SUT crashed/hung on wrong-length verify input: ${(err as Error).message}`,
+        BUG_SIZE,
+      ),
+    );
   }
 }
 

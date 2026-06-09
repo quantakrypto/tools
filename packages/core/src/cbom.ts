@@ -11,12 +11,7 @@
  */
 import { createHash } from "node:crypto";
 
-import type {
-  AlgorithmFamily,
-  Finding,
-  FindingCategory,
-  ScanResult,
-} from "./types.js";
+import type { AlgorithmFamily, Finding, FindingCategory, ScanResult } from "./types.js";
 import { VERSION } from "./version.js";
 
 /** A CycloneDX 1.6 cryptographic bill of materials (kept permissive). */

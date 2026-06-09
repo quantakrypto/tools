@@ -64,9 +64,7 @@ export function toSarif(result: ScanResult): SarifLog {
       shortDescription: { text: f.title },
       fullDescription: { text: f.message },
       defaultConfiguration: { level: sarifLevel(f.severity), rank: sarifRank(f.severity) },
-      ...(f.remediation
-        ? { help: { text: `Remediation: ${f.remediation}` } }
-        : {}),
+      ...(f.remediation ? { help: { text: `Remediation: ${f.remediation}` } } : {}),
       properties: {
         category: f.category,
         ...(f.algorithm ? { algorithm: f.algorithm } : {}),
@@ -75,7 +73,11 @@ export function toSarif(result: ScanResult): SarifLog {
         ...(f.cwe ? { tags: ["security", f.cwe] } : {}),
       },
       ...(f.cwe
-        ? { relationships: [{ target: { id: f.cwe, toolComponent: { name: "CWE" } }, kinds: ["relevant"] }] }
+        ? {
+            relationships: [
+              { target: { id: f.cwe, toolComponent: { name: "CWE" } }, kinds: ["relevant"] },
+            ],
+          }
         : {}),
     });
   }
@@ -131,9 +133,10 @@ export function toSarif(result: ScanResult): SarifLog {
             informationUri: "https://cwe.mitre.org/",
             organization: "MITRE",
             shortDescription: { text: "The MITRE Common Weakness Enumeration" },
-            taxa: [...cweTaxa]
-              .sort()
-              .map((id) => ({ id, helpUri: `https://cwe.mitre.org/data/definitions/${id.replace(/^CWE-/, "")}.html` })),
+            taxa: [...cweTaxa].sort().map((id) => ({
+              id,
+              helpUri: `https://cwe.mitre.org/data/definitions/${id.replace(/^CWE-/, "")}.html`,
+            })),
           },
         ]
       : [];
@@ -258,8 +261,7 @@ function scoreColor(score: number): string {
  */
 export function formatSummary(result: ScanResult, options?: { color?: boolean }): string {
   const color = options?.color ?? false;
-  const c = (code: string, text: string): string =>
-    color ? `${code}${text}${ANSI.reset}` : text;
+  const c = (code: string, text: string): string => (color ? `${code}${text}${ANSI.reset}` : text);
 
   const lines: string[] = [];
   const inv = result.inventory;
@@ -303,7 +305,9 @@ export function formatSummary(result: ScanResult, options?: { color?: boolean })
     (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
   );
   const MAX_SHOWN = 25;
-  lines.push(c(ANSI.bold, `Top findings (${Math.min(MAX_SHOWN, sorted.length)} of ${sorted.length}):`));
+  lines.push(
+    c(ANSI.bold, `Top findings (${Math.min(MAX_SHOWN, sorted.length)} of ${sorted.length}):`),
+  );
 
   for (const f of sorted.slice(0, MAX_SHOWN)) {
     const loc = `${f.location.file}:${f.location.line}${

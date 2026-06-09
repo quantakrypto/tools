@@ -42,7 +42,10 @@ test("scan honours include (only src/ scanned)", async () => {
   try {
     const r = await scan({ root: dir, include: ["src"] });
     assert.ok(r.findings.some((f) => f.ruleId === "node-crypto-ecdh"));
-    assert.ok(!r.findings.some((f) => f.ruleId === "jwt-classical-alg"), "lib/ excluded by include");
+    assert.ok(
+      !r.findings.some((f) => f.ruleId === "jwt-classical-alg"),
+      "lib/ excluded by include",
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

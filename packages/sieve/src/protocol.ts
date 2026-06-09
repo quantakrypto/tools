@@ -21,12 +21,7 @@ export const PROTOCOL_VERSION = 1 as const;
 // ---------------------------------------------------------------------------
 
 /** Operation names, shared across families where the semantics overlap. */
-export type Op =
-  | "keygen"
-  | "encaps"
-  | "decaps"
-  | "sign"
-  | "verify";
+export type Op = "keygen" | "encaps" | "decaps" | "sign" | "verify";
 
 /** Families that support the signature operations (sign / verify). */
 export type SignatureFamily = "ml-dsa" | "slh-dsa";
@@ -93,12 +88,7 @@ export interface VerifyRequest extends RequestBase {
 }
 
 /** Any request Sieve may send. */
-export type Request =
-  | KeygenRequest
-  | EncapsRequest
-  | DecapsRequest
-  | SignRequest
-  | VerifyRequest;
+export type Request = KeygenRequest | EncapsRequest | DecapsRequest | SignRequest | VerifyRequest;
 
 /**
  * Omit that distributes over a union, so each variant keeps its own fields
@@ -229,10 +219,7 @@ export function decodeResponse(line: string): Response {
   try {
     parsed = JSON.parse(trimmed);
   } catch (err) {
-    throw new ProtocolError(
-      `not valid JSON: ${(err as Error).message}`,
-      line,
-    );
+    throw new ProtocolError(`not valid JSON: ${(err as Error).message}`, line);
   }
 
   if (!isObject(parsed)) {
@@ -253,10 +240,7 @@ export function decodeResponse(line: string): Response {
     const code = parsed["code"];
     const message = parsed["message"];
     if (!isStr(code) || !isStr(message)) {
-      throw new ProtocolError(
-        "error response must have string 'code' and 'message'",
-        line,
-      );
+      throw new ProtocolError("error response must have string 'code' and 'message'", line);
     }
     return { id, ok: false, code, message };
   }
@@ -279,8 +263,7 @@ export function decodeResponse(line: string): Response {
   }
 
   throw new ProtocolError(
-    "ok response has no recognizable payload " +
-      "(expected pk+sk, ct+ss, ss, sig, or valid)",
+    "ok response has no recognizable payload " + "(expected pk+sk, ct+ss, ss, sig, or valid)",
     line,
   );
 }
@@ -303,8 +286,7 @@ export function toB64(bytes: Uint8Array): string {
 export function fromB64(b64: string): Uint8Array {
   const buf = Buffer.from(b64, "base64");
   // Buffer.from is lenient; sanity-check by re-encoding the canonical form.
-  if (buf.toString("base64").replace(/=+$/, "") !==
-      b64.replace(/\s/g, "").replace(/=+$/, "")) {
+  if (buf.toString("base64").replace(/=+$/, "") !== b64.replace(/\s/g, "").replace(/=+$/, "")) {
     throw new ProtocolError("invalid base64", b64);
   }
   return new Uint8Array(buf);

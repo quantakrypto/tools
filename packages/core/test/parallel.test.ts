@@ -37,7 +37,10 @@ test("chunkByBytes buckets by total bytes, preserving order", () => {
   ];
   const chunks = chunkByBytes(files, 5);
   // a (3) → b would push to 6 > 5, new chunk; b (3) + c? 6 > 5 new; ...
-  assert.deepEqual(chunks.map((c) => c.files), [["a"], ["b"], ["c", "d"]]);
+  assert.deepEqual(
+    chunks.map((c) => c.files),
+    [["a"], ["b"], ["c", "d"]],
+  );
 });
 
 test("chunkByBytes never produces an empty chunk and handles a huge single file", () => {

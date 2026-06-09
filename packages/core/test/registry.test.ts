@@ -18,7 +18,14 @@ const fakeDetector: Detector = {
 
 test("defaultRegistry contains the built-in detectors", () => {
   const ids = new Set(defaultRegistry.all().map((d) => d.id));
-  for (const id of ["node-crypto", "webcrypto", "crypto-libs", "jwt-jose", "tls-config", "pem-material"]) {
+  for (const id of [
+    "node-crypto",
+    "webcrypto",
+    "crypto-libs",
+    "jwt-jose",
+    "tls-config",
+    "pem-material",
+  ]) {
     assert.ok(ids.has(id), `default registry has ${id}`);
   }
   // The exported `detectors` array stays in sync with the registry.
@@ -33,7 +40,10 @@ test("register / get / has / all preserve order and uniqueness", () => {
   r.register(fakeDetector);
   assert.equal(r.get("fake-detector"), fakeDetector);
   assert.ok(r.has("fake-detector"));
-  assert.deepEqual(r.all().map((d) => d.id), ["fake-detector"]);
+  assert.deepEqual(
+    r.all().map((d) => d.id),
+    ["fake-detector"],
+  );
   assert.throws(() => r.register(fakeDetector), /duplicate detector id/);
 });
 

@@ -9,15 +9,16 @@
  * (ML-DSA correctness — sign then verify === true — lives in dsa.ts.)
  */
 
+import { type Category, type CategoryResult, type Check, fail, pass, rollUp } from "./types.js";
 import {
-  type Category,
-  type CategoryResult,
-  type Check,
-  fail,
-  pass,
-  rollUp,
-} from "./types.js";
-import { bytesEqual, kemDecaps, kemEncaps, kemKeygen, mapBounded, requireKem, UnexpectedResponse } from "./helpers.js";
+  bytesEqual,
+  kemDecaps,
+  kemEncaps,
+  kemKeygen,
+  mapBounded,
+  requireKem,
+  UnexpectedResponse,
+} from "./helpers.js";
 import { toB64 } from "../protocol.js";
 
 /** Outcome of one round-trip iteration. */

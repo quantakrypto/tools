@@ -10,20 +10,20 @@
  * downstream tools can reuse them without reaching into internal paths.
  */
 
-import { scan } from "@qproof/core";
-import type { Finding, ScanOptions, ScanResult } from "@qproof/core";
+import { changedFiles, scan, scanParallel } from "@qproof/core";
+import type { Baseline, Finding, ParallelScanOptions, ScanResult } from "@qproof/core";
 
-import { applyBaseline, buildBaseline, readBaseline, writeBaseline } from "./baseline.js";
-import type { BaselineFile } from "./baseline.js";
+import { applyBaseline, loadBaseline, saveBaseline } from "./baseline.js";
 import { defaultOptions, meetsThreshold } from "./args.js";
 import type { QscanOptions } from "./args.js";
-import { renderHuman, renderJson, renderSarif } from "./report.js";
+import { renderCbom, renderHuman, renderJson, renderSarif } from "./report.js";
 
-export type { QscanOptions, ParsedArgs } from "./args.js";
-export type { BaselineFile } from "./baseline.js";
+export type { QscanOptions, ParsedArgs, QscanFormat } from "./args.js";
+export type { Baseline } from "./baseline.js";
 export {
   ArgError,
   asFormat,
+  asInt,
   asSeverity,
   defaultOptions,
   meetsThreshold,
@@ -33,14 +33,17 @@ export {
 } from "./args.js";
 export {
   applyBaseline,
+  baselineFromFindings,
   BASELINE_VERSION,
   buildBaseline,
   fingerprint,
-  fingerprint as fingerprintFinding,
+  fingerprintFinding,
+  loadBaseline,
   readBaseline,
+  saveBaseline,
   writeBaseline,
 } from "./baseline.js";
-export { renderHuman, renderJson, renderSarif } from "./report.js";
+export { renderCbom, renderHuman, renderJson, renderSarif } from "./report.js";
 export { HELP_TEXT, versionLine } from "./help.js";
 
 /** Process-style exit codes qScan uses. */
@@ -62,23 +65,52 @@ export interface QscanRun {
   /** Rendered report in the requested format (`undefined` for a baseline write). */
   report?: string;
   /** The baseline that was written, when `writeBaseline` was requested. */
-  baselineWritten?: BaselineFile;
+  baselineWritten?: Baseline;
   /** Suggested process exit code. */
   exitCode: number;
 }
 
 /**
- * The scan implementation `runQscan` calls. Matches `@qproof/core`'s `scan`.
+ * The scan implementation `runQscan` calls. Matches `@qproof/core`'s `scan` /
+ * `scanParallel` (parallel options are a superset of `ScanOptions`).
  * Injectable so the GitHub Action and tests can supply a custom scanner.
  */
-export type ScanFn = (options: ScanOptions) => Promise<ScanResult>;
+export type ScanFn = (options: ParallelScanOptions) => Promise<ScanResult>;
+
+/**
+ * Resolve the changed-file list for incremental scans. Injectable for testing;
+ * defaults to core's git-aware {@link changedFiles}.
+ */
+export type ChangedFilesFn = (root: string, since?: string) => Promise<string[]>;
 
 /** Behavioral hooks for {@link runQscan}, mainly for testing. */
 export interface RunQscanHooks {
   /** Emit raw ANSI color in the human report. Default: false. */
   color?: boolean;
-  /** Override the scanner. Default: `scan` from `@qproof/core`. */
+  /** Override the scanner. Default: `scan` / `scanParallel` from `@qproof/core`. */
   scanFn?: ScanFn;
+  /** Override changed-file resolution. Default: `changedFiles` from `@qproof/core`. */
+  changedFilesFn?: ChangedFilesFn;
+}
+
+/**
+ * Translate resolved {@link QscanOptions} into core {@link ParallelScanOptions}.
+ * `files` (the incremental file list) is layered on by {@link runQscan}.
+ */
+function toScanOptions(options: QscanOptions): ParallelScanOptions {
+  const scanOptions: ParallelScanOptions = {
+    root: options.path,
+    source: options.source,
+    dependencies: options.dependencies,
+    config: options.config,
+    noDefaultIgnores: options.noDefaultIgnores,
+    scanMinified: options.scanMinified,
+  };
+  if (options.ignore.length > 0) scanOptions.exclude = options.ignore;
+  if (options.include.length > 0) scanOptions.include = options.include;
+  if (options.maxFileSize !== undefined) scanOptions.maxFileSize = options.maxFileSize;
+  if (options.concurrency !== undefined) scanOptions.concurrency = options.concurrency;
+  return scanOptions;
 }
 
 /**
@@ -89,6 +121,14 @@ export interface RunQscanHooks {
  * the function pure enough to unit-test and to embed in the GitHub Action.
  *
  * Behavior:
+ *  - The walk is configured by `include` / `ignore` / `maxFileSize` /
+ *    `noDefaultIgnores` / `scanMinified`.
+ *  - With `changed` set, only the files git reports as changed (relative to
+ *    `since`, if given) are scanned via `ScanOptions.files`. A non-git tree
+ *    yields an empty list, so nothing is scanned.
+ *  - With `parallel` (or `concurrency`) set, the scan is routed through core's
+ *    `scanParallel`, which itself falls back to the serial path for small
+ *    inputs.
  *  - When `opts.writeBaseline` is set, the scan runs, a baseline is built from
  *    *all* findings, written to disk, and `exitCode` is {@link EXIT.OK}. No
  *    report is rendered.
@@ -105,20 +145,22 @@ export async function runQscan(
   hooks: RunQscanHooks = {},
 ): Promise<QscanRun> {
   const options: QscanOptions = { ...defaultOptions(), ...opts };
-  const scanFn: ScanFn = hooks.scanFn ?? scan;
+  // Route to the parallel pool when requested; both share the ScanOptions shape.
+  const scanFn: ScanFn = hooks.scanFn ?? (options.parallel ? scanParallel : scan);
+  const resolveChanged: ChangedFilesFn = hooks.changedFilesFn ?? changedFiles;
 
-  const result = await scanFn({
-    root: options.path,
-    exclude: options.ignore.length > 0 ? options.ignore : undefined,
-    source: options.source,
-    dependencies: options.dependencies,
-    config: options.config,
-  });
+  const scanOptions = toScanOptions(options);
+
+  // Incremental mode: restrict the scan to git-changed files.
+  if (options.changed) {
+    scanOptions.files = await resolveChanged(options.path, options.since);
+  }
+
+  const result = await scanFn(scanOptions);
 
   // --write-baseline: snapshot every finding, persist, and exit cleanly.
   if (options.writeBaseline) {
-    const baseline = buildBaseline(result.findings);
-    await writeBaseline(options.writeBaseline, baseline);
+    const baseline = await saveBaseline(options.writeBaseline, result.findings);
     return {
       result,
       suppressed: [],
@@ -130,8 +172,8 @@ export async function runQscan(
   // --baseline: suppress previously-accepted findings.
   let suppressed: Finding[] = [];
   if (options.baseline) {
-    const accepted = await readBaseline(options.baseline);
-    const split = applyBaseline(result.findings, accepted);
+    const baseline = await loadBaseline(options.baseline);
+    const split = applyBaseline(result.findings, baseline);
     result.findings = split.kept;
     suppressed = split.suppressed;
   }
@@ -161,6 +203,8 @@ export function renderReport(
       return renderJson(result);
     case "sarif":
       return renderSarif(result);
+    case "cbom":
+      return renderCbom(result);
     case "human":
     default:
       return renderHuman(result, { color });
@@ -168,4 +212,4 @@ export function renderReport(
 }
 
 /** Re-export the core result types consumers commonly need. */
-export type { Finding, ScanResult } from "@qproof/core";
+export type { Finding, ScanResult, ScanOptions } from "@qproof/core";

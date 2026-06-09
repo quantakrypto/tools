@@ -64,10 +64,7 @@ test("explicit env overrides an inherited value", () => {
  * default scrubbed env but can under inheritEnv.
  */
 test("a parent-env secret does not reach the spawned SUT by default", async () => {
-  const probe = join(
-    mkdtempSync(join(tmpdir(), "sieve-envprobe-")),
-    "probe.mjs",
-  );
+  const probe = join(mkdtempSync(join(tmpdir(), "sieve-envprobe-")), "probe.mjs");
   // The probe answers one request: it echoes whether SIEVE_FAKE_SECRET is set.
   writeFileSync(
     probe,
@@ -87,16 +84,38 @@ test("a parent-env secret does not reach the spawned SUT by default", async () =
   try {
     // Default: scrubbed env — the SUT must NOT see the secret.
     const scrubbed = new Runner({ command: [process.execPath, probe], timeoutMs: 10_000 });
-    const r1 = await scrubbed.send({ family: "ml-kem", param: "ml-kem-512", op: "decaps", sk: "", ct: "" });
+    const r1 = await scrubbed.send({
+      family: "ml-kem",
+      param: "ml-kem-512",
+      op: "decaps",
+      sk: "",
+      ct: "",
+    });
     await scrubbed.close();
     assert.equal(r1.ok, true);
-    assert.ok("ss" in r1 && r1.ss === Buffer.from([0]).toString("base64"), "SUT saw a scrubbed env");
+    assert.ok(
+      "ss" in r1 && r1.ss === Buffer.from([0]).toString("base64"),
+      "SUT saw a scrubbed env",
+    );
 
     // Opt-in inheritEnv: the SUT now sees it.
-    const inherited = new Runner({ command: [process.execPath, probe], inheritEnv: true, timeoutMs: 10_000 });
-    const r2 = await inherited.send({ family: "ml-kem", param: "ml-kem-512", op: "decaps", sk: "", ct: "" });
+    const inherited = new Runner({
+      command: [process.execPath, probe],
+      inheritEnv: true,
+      timeoutMs: 10_000,
+    });
+    const r2 = await inherited.send({
+      family: "ml-kem",
+      param: "ml-kem-512",
+      op: "decaps",
+      sk: "",
+      ct: "",
+    });
     await inherited.close();
-    assert.ok("ss" in r2 && r2.ss === Buffer.from([1]).toString("base64"), "inheritEnv should pass the secret");
+    assert.ok(
+      "ss" in r2 && r2.ss === Buffer.from([1]).toString("base64"),
+      "inheritEnv should pass the secret",
+    );
   } finally {
     delete process.env["SIEVE_FAKE_SECRET"];
   }

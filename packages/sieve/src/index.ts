@@ -22,14 +22,43 @@ import { isParamSet, sizesFor, type ParamSet } from "./sizes.js";
 
 export type { SieveReport, CategoryCounts } from "./report.js";
 export type { CategoryResult, Check, Status, BugClass } from "./categories/types.js";
-export type { ParamSet, Family, Sizes, KemSizes, DsaSizes, SlhDsaSizes, SignatureSizes } from "./sizes.js";
+export type {
+  ParamSet,
+  Family,
+  Sizes,
+  KemSizes,
+  DsaSizes,
+  SlhDsaSizes,
+  SignatureSizes,
+} from "./sizes.js";
 export type { Request, Response, SignatureFamily } from "./protocol.js";
 
-export { PARAM_SETS, isParamSet, sizesFor, asKemSizes, asDsaSizes, asSlhDsaSizes, asSignatureSizes } from "./sizes.js";
+export {
+  PARAM_SETS,
+  isParamSet,
+  sizesFor,
+  asKemSizes,
+  asDsaSizes,
+  asSlhDsaSizes,
+  asSignatureSizes,
+} from "./sizes.js";
 export { CATEGORIES, categoriesFor } from "./categories/index.js";
 export { buildReport, formatHuman, formatJson, overallVerdict } from "./report.js";
-export { encodeRequest, decodeResponse, ProtocolError, PROTOCOL_VERSION, toB64, fromB64 } from "./protocol.js";
-export { Runner, TimeoutError, SutCrashError, buildSutEnv, DEFAULT_ENV_ALLOWLIST } from "./runner.js";
+export {
+  encodeRequest,
+  decodeResponse,
+  ProtocolError,
+  PROTOCOL_VERSION,
+  toB64,
+  fromB64,
+} from "./protocol.js";
+export {
+  Runner,
+  TimeoutError,
+  SutCrashError,
+  buildSutEnv,
+  DEFAULT_ENV_ALLOWLIST,
+} from "./runner.js";
 export type { RunnerOptions } from "./runner.js";
 export { loadVectors } from "./vectors.js";
 export type { Vector, VectorSet } from "./vectors.js";

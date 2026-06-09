@@ -144,10 +144,8 @@ test("toSarif omits taxonomies when no finding has a CWE", () => {
     message: "m",
     location: { file: "a.ts", line: 1 },
   };
-  const run = (toSarif({ ...sampleResult(), findings: [f], inventory: buildInventory([f]) }).runs[0]) as Record<
-    string,
-    any
-  >;
+  const run = toSarif({ ...sampleResult(), findings: [f], inventory: buildInventory([f]) })
+    .runs[0] as Record<string, any>;
   assert.equal(run.taxonomies, undefined);
 });
 

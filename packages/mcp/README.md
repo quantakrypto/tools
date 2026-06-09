@@ -128,24 +128,74 @@ List the qproof detector catalog (ids + descriptions). No input.
 { "type": "object", "properties": {} }
 ```
 
-## Hosted HTTP server
+### `generate_cbom`
 
-The same `McpServer` can be served over HTTP (a Streamable-HTTP-style JSON-RPC
-endpoint) for remote / multi-tenant deployments:
+Scan a path and emit a **CycloneDX 1.6 Cryptographic Bill of Materials (CBOM)**
+of the classical cryptographic assets found, for compliance / supply-chain
+tooling. Reads the filesystem, so it is gated like `scan_path` over HTTP.
 
-```bash
-PORT=3000 node dist/http.js
+```json
+{
+  "type": "object",
+  "properties": { "path": { "type": "string" } },
+  "required": ["path"]
+}
 ```
 
-- `POST /mcp` — body is a single JSON-RPC 2.0 message; the JSON-RPC response is
-  returned as the `application/json` body. Notifications get `202` with no body.
-  An `mcp-session-id` header is echoed or minted on each request.
-- `GET /health` — liveness probe returning `{ "status": "ok" }`.
+## Hosted HTTP server (safe-by-default)
+
+The same `McpServer` can be served over HTTP (a Streamable-HTTP-style JSON-RPC
+endpoint) for remote deployments. The stdio transport trusts the local user and
+is fully featured; the **HTTP transport is hardened**, because a hosted endpoint
+is reachable by untrusted peers:
+
+- **Binds to `127.0.0.1` by default** (not `0.0.0.0`). Override via
+  `QPROOF_MCP_HOST`. Binding to a non-loopback host **without a token is refused
+  at startup** (it would be an open, unauthenticated tool relay).
+- **Bearer-token auth.** Set `QPROOF_MCP_TOKEN` and every `/mcp` request must
+  send `Authorization: Bearer <token>`, else `401`. With no token set, only the
+  loopback bind is allowed.
+- **Filesystem tools are disabled by default.** `scan_path`, `inventory_crypto`
+  and `generate_cbom` read arbitrary server paths, so over HTTP they are exposed
+  only when `QPROOF_MCP_ALLOW_FS=1`. The knowledge tools (`explain_finding`,
+  `suggest_hybrid`, `list_rules`) are always available. `tools/list` and
+  `tools/call` both reflect the gating.
+- **Limits.** A 1 MiB request-body cap (always), a per-request tool timeout
+  (`QPROOF_MCP_TIMEOUT_MS`, default 30000 → `504` on timeout) and a response-size
+  cap (`QPROOF_MCP_MAX_RESPONSE_BYTES`, default 4 MiB).
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `QPROOF_MCP_HOST` (or `HOST`) | `127.0.0.1` | Bind interface. Non-loopback requires a token. |
+| `PORT` | `3000` | Listen port. |
+| `QPROOF_MCP_TOKEN` | _(unset)_ | When set, requires `Authorization: Bearer <token>`. |
+| `QPROOF_MCP_ALLOW_FS` | _(off)_ | `1`/`true` exposes the filesystem tools over HTTP. |
+| `QPROOF_MCP_TIMEOUT_MS` | `30000` | Per-request tool-execution deadline. |
+| `QPROOF_MCP_MAX_RESPONSE_BYTES` | `4194304` | Response-body size cap. |
+
+```bash
+# Local, knowledge tools only (default safe posture)
+node dist/http.js
+
+# Local with the filesystem tools enabled
+QPROOF_MCP_ALLOW_FS=1 node dist/http.js
+
+# Reachable from the network: a token is mandatory
+QPROOF_MCP_HOST=0.0.0.0 QPROOF_MCP_TOKEN="$(openssl rand -hex 32)" node dist/http.js
+```
+
+Endpoints:
+
+- `POST /mcp` — one JSON-RPC 2.0 message; the JSON-RPC response is the
+  `application/json` body. Notifications get `202` with no body. An
+  `mcp-session-id` header is echoed or minted on each request.
+- `GET /health` — liveness probe returning `{ "status": "ok" }` (no auth).
 
 ```bash
 curl -s localhost:3000/health
 curl -s localhost:3000/mcp \
   -H 'content-type: application/json' \
+  -H 'authorization: Bearer YOUR_TOKEN' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 

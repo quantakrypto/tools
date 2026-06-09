@@ -104,10 +104,7 @@ export function buildSutEnv(
       if (typeof v === "string") out[k] = v;
     }
   } else {
-    const names = new Set<string>([
-      ...DEFAULT_ENV_ALLOWLIST,
-      ...(opts.envAllowlist ?? []),
-    ]);
+    const names = new Set<string>([...DEFAULT_ENV_ALLOWLIST, ...(opts.envAllowlist ?? [])]);
     for (const name of names) {
       const v = parentEnv[name];
       if (typeof v === "string") out[name] = v;
@@ -122,7 +119,10 @@ export function buildSutEnv(
 
 /** Thrown when a request exceeds its timeout. */
 export class TimeoutError extends Error {
-  constructor(public readonly request: Request, public readonly timeoutMs: number) {
+  constructor(
+    public readonly request: Request,
+    public readonly timeoutMs: number,
+  ) {
     super(`SUT did not respond to id=${request.id} (${request.op}) within ${timeoutMs}ms`);
     this.name = "TimeoutError";
   }
@@ -130,7 +130,10 @@ export class TimeoutError extends Error {
 
 /** Thrown when the SUT process dies before/while a request is in flight. */
 export class SutCrashError extends Error {
-  constructor(message: string, public readonly stderr: string) {
+  constructor(
+    message: string,
+    public readonly stderr: string,
+  ) {
     super(message);
     this.name = "SutCrashError";
   }
@@ -180,9 +183,7 @@ export class Runner {
     this.child.on("exit", (code, signal) => {
       if (this.closed) return;
       const why =
-        signal !== null
-          ? `SUT exited via signal ${signal}`
-          : `SUT exited with code ${code}`;
+        signal !== null ? `SUT exited via signal ${signal}` : `SUT exited with code ${code}`;
       this.failAll(new SutCrashError(why, this.stderrBuf));
     });
 
@@ -291,10 +292,7 @@ export class Runner {
    *
    * Setting `maxInFlight <= 1` degrades to strictly serial behavior.
    */
-  async sendMany(
-    reqs: readonly RequestInput[],
-    maxInFlight = 16,
-  ): Promise<Response[]> {
+  async sendMany(reqs: readonly RequestInput[], maxInFlight = 16): Promise<Response[]> {
     const limit = Math.max(1, Math.floor(maxInFlight));
     const results: Response[] = new Array(reqs.length);
     let next = 0;
@@ -347,10 +345,7 @@ export class Runner {
       this.child.once("exit", () => resolve());
     });
 
-    const timed = await Promise.race([
-      exited.then(() => true),
-      delay(graceMs).then(() => false),
-    ]);
+    const timed = await Promise.race([exited.then(() => true), delay(graceMs).then(() => false)]);
 
     if (!timed && this.child.exitCode === null) {
       this.child.kill("SIGTERM");

@@ -79,7 +79,8 @@ const PEM_RULES: PemRule[] = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
-    message: "Embedded PGP/GPG private key block (RSA/ECDSA/EdDSA/ElGamal); classical and not quantum-safe.",
+    message:
+      "Embedded PGP/GPG private key block (RSA/ECDSA/EdDSA/ElGamal); classical and not quantum-safe.",
     remediation: "Rotate the key; track OpenPGP PQC drafts for migration.",
   },
   {
@@ -91,7 +92,8 @@ const PEM_RULES: PemRule[] = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_BROKEN_CRYPTO,
-    message: "Embedded PGP/GPG message; likely encrypted with classical RSA/ElGamal (harvest-now-decrypt-later).",
+    message:
+      "Embedded PGP/GPG message; likely encrypted with classical RSA/ElGamal (harvest-now-decrypt-later).",
     remediation: "Re-encrypt with PQC-capable tooling as OpenPGP PQC profiles mature.",
   },
   {

@@ -100,7 +100,8 @@ function parseArgs(argv: readonly string[]): CliOptions {
       }
       case "--iterations": {
         const n = Number(next());
-        if (!Number.isInteger(n) || n < 1) throw new UsageError("--iterations must be a positive integer");
+        if (!Number.isInteger(n) || n < 1)
+          throw new UsageError("--iterations must be a positive integer");
         iterations = n;
         break;
       }
@@ -111,17 +112,22 @@ function parseArgs(argv: readonly string[]): CliOptions {
         timing = true;
         break;
       case "--only":
-        only = next().split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+        only = next()
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
         break;
       case "--timeout-ms": {
         const n = Number(next());
-        if (!Number.isInteger(n) || n < 1) throw new UsageError("--timeout-ms must be a positive integer");
+        if (!Number.isInteger(n) || n < 1)
+          throw new UsageError("--timeout-ms must be a positive integer");
         timeoutMs = n;
         break;
       }
       case "--pipeline-depth": {
         const n = Number(next());
-        if (!Number.isInteger(n) || n < 1) throw new UsageError("--pipeline-depth must be a positive integer");
+        if (!Number.isInteger(n) || n < 1)
+          throw new UsageError("--pipeline-depth must be a positive integer");
         pipelineDepth = n;
         break;
       }

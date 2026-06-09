@@ -182,7 +182,15 @@ export async function scanParallel(options: ParallelScanOptions): Promise<ScanRe
 
   let results: ChunkResult[];
   try {
-    results = await runPool(WorkerCtor, entry, baseDir, toggles, chunks, concurrency, options.onFile);
+    results = await runPool(
+      WorkerCtor,
+      entry,
+      baseDir,
+      toggles,
+      chunks,
+      concurrency,
+      options.onFile,
+    );
   } catch {
     // Any worker failure → safe fallback to the serial path.
     return scan({ ...options, files: files.map((f) => f.rel) });
@@ -236,27 +244,30 @@ function runPool(
 
     const spawn = (): NodeWorker => {
       const w = new WorkerCtor(entry, { workerData: { baseDir, toggles } });
-      w.on("message", (msg: { index: number; result?: ChunkResult; files?: string[]; error?: string }) => {
-        if (msg.error) {
-          if (!failed) {
-            failed = true;
-            cleanup();
-            reject(new Error(msg.error));
-          }
-          return;
-        }
-        if (msg.files && onFile) for (const f of msg.files) onFile(f);
-        if (msg.result) {
-          results[msg.index] = msg.result;
-          done++;
-          if (done === chunks.length) {
-            cleanup();
-            resolve(results);
+      w.on(
+        "message",
+        (msg: { index: number; result?: ChunkResult; files?: string[]; error?: string }) => {
+          if (msg.error) {
+            if (!failed) {
+              failed = true;
+              cleanup();
+              reject(new Error(msg.error));
+            }
             return;
           }
-          dispatch(w);
-        }
-      });
+          if (msg.files && onFile) for (const f of msg.files) onFile(f);
+          if (msg.result) {
+            results[msg.index] = msg.result;
+            done++;
+            if (done === chunks.length) {
+              cleanup();
+              resolve(results);
+              return;
+            }
+            dispatch(w);
+          }
+        },
+      );
       w.on("error", (err) => {
         if (!failed) {
           failed = true;

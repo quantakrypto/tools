@@ -14,7 +14,18 @@ import {
 } from "../src/index.js";
 
 test("remediationFor covers every family including X448", () => {
-  for (const a of ["RSA", "ECDH", "ECDSA", "EdDSA", "DH", "DSA", "X25519", "X448", "ECIES", "unknown"] as const) {
+  for (const a of [
+    "RSA",
+    "ECDH",
+    "ECDSA",
+    "EdDSA",
+    "DH",
+    "DSA",
+    "X25519",
+    "X448",
+    "ECIES",
+    "unknown",
+  ] as const) {
     const r = remediationFor(a);
     assert.ok(r, `remediation for ${a}`);
     assert.equal(r.algorithm, a);

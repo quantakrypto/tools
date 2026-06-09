@@ -60,11 +60,7 @@ export interface DsaVerifyVector {
 }
 
 /** Any normalized vector. */
-export type Vector =
-  | KemKeygenVector
-  | KemEncapVector
-  | KemDecapVector
-  | DsaVerifyVector;
+export type Vector = KemKeygenVector | KemEncapVector | KemDecapVector | DsaVerifyVector;
 
 /** Result of scanning a vectors directory. */
 export interface VectorSet {

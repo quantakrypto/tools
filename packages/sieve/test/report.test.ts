@@ -5,7 +5,12 @@ import { buildReport, formatHuman, formatJson, overallVerdict } from "../src/rep
 import type { CategoryResult } from "../src/categories/types.js";
 
 function mk(category: string, status: "pass" | "fail" | "skip"): CategoryResult {
-  return { category, status, checks: [{ name: "c", status, detail: "d" }], summary: `${category} ${status}` };
+  return {
+    category,
+    status,
+    checks: [{ name: "c", status, detail: "d" }],
+    summary: `${category} ${status}`,
+  };
 }
 
 test("overallVerdict is FAIL if any non-advisory category fails", () => {

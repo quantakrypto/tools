@@ -71,6 +71,7 @@ test("tools/list returns every tool with a valid object inputSchema", async () =
   const names = tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
     "explain_finding",
+    "generate_cbom",
     "inventory_crypto",
     "list_rules",
     "scan_path",

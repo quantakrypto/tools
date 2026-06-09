@@ -21,10 +21,7 @@ interface ToolCallResult {
 }
 
 /** Call a tool and return its (validated) ToolResult. */
-async function callTool(
-  name: string,
-  args: Record<string, unknown>,
-): Promise<ToolCallResult> {
+async function callTool(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
   const server = createQproofServer();
   const res = await server.handle({
     jsonrpc: "2.0",
@@ -33,7 +30,10 @@ async function callTool(
     params: { name, arguments: args },
   });
 
-  assert.ok(res && "result" in (res as object), `tools/call ${name} should succeed at protocol level`);
+  assert.ok(
+    res && "result" in (res as object),
+    `tools/call ${name} should succeed at protocol level`,
+  );
   const result = (res as JsonRpcSuccess).result as ToolCallResult;
 
   // Envelope invariants every tool must satisfy.
@@ -79,6 +79,40 @@ test("explain_finding by ruleId returns a structured explanation", async () => {
   assert.match(text, /rsa-keygen/);
 });
 
+test("explain_finding resolves a library rule to its detector + remediation", async () => {
+  // P0-5: a real crypto-libs finding (forge-rsa-keygen) must resolve to the
+  // crypto-libs detector and surface RSA remediation — the old prefix match
+  // returned "no matching detector" here.
+  const result = await callTool("explain_finding", { ruleId: "forge-rsa-keygen" });
+  assert.notEqual(result.isError, true);
+  const text = result.content.map((c) => c.text).join("\n");
+  assert.match(text, /forge-rsa-keygen/);
+  assert.match(text, /crypto-libs/);
+  assert.doesNotMatch(text, /No matching detector/i);
+  // The rule carries RSA, so remediation is surfaced without an explicit algorithm.
+  assert.match(text, /RSA/);
+  assert.match(text, /ML-KEM|ML-DSA|recommendation/i);
+});
+
+test("explain_finding resolves elliptic-ec and node-rsa library rules", async () => {
+  for (const ruleId of ["elliptic-ec", "node-rsa"]) {
+    const result = await callTool("explain_finding", { ruleId });
+    assert.notEqual(result.isError, true, `${ruleId} should not error`);
+    const text = result.content.map((c) => c.text).join("\n");
+    assert.match(text, new RegExp(ruleId), `${ruleId} echoed`);
+    assert.match(text, /crypto-libs/, `${ruleId} resolves to crypto-libs`);
+    assert.doesNotMatch(text, /No matching detector/i);
+  }
+});
+
+test("explain_finding resolves a pem-* rule to the pem-material detector", async () => {
+  const result = await callTool("explain_finding", { ruleId: "pem-ec-private-key" });
+  assert.notEqual(result.isError, true);
+  const text = result.content.map((c) => c.text).join("\n");
+  assert.match(text, /pem-material/);
+  assert.doesNotMatch(text, /No matching detector/i);
+});
+
 test("explain_finding with neither ruleId nor algorithm errors", async () => {
   const result = await callTool("explain_finding", {});
   assert.equal(result.isError, true);
@@ -122,6 +156,12 @@ test("scan_path on a stubbed core surfaces a clean error, not a crash", async ()
 
 test("inventory_crypto requires a path argument", async () => {
   const result = await callTool("inventory_crypto", {});
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /path/i);
+});
+
+test("generate_cbom requires a path argument", async () => {
+  const result = await callTool("generate_cbom", {});
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /path/i);
 });

@@ -1,82 +1,85 @@
 /**
- * Baseline support for qScan.
+ * Baseline support for qScan — a thin adapter over the **canonical** baseline
+ * implementation in `@qproof/core` (P1-1).
  *
- * A *baseline* records the fingerprints of findings that have been triaged and
- * accepted. On subsequent scans, any finding whose fingerprint is in the
- * baseline is suppressed, so CI only fails on *new* problems.
+ * Historically qScan carried its own baseline scheme (12-char hash of
+ * `ruleId|file|snippet|line`) that was incompatible with the GitHub Action's.
+ * Both have been unified onto core's single source of truth, so this module no
+ * longer defines its own format or hashing — it re-exports core's primitives
+ * and adds only the small filename-resolution / API-shape conveniences the CLI
+ * and `@qproof/action` rely on.
  *
- * The fingerprint is intentionally stable across runs and machines: it is a
- * truncated SHA-256 of the rule id, file path, snippet, and line number. It
- * deliberately omits volatile fields (timestamps, scan root) so that moving the
- * repository or rescanning does not invalidate a baseline.
+ * The on-disk format is core's {@link Baseline}: `{ version, fingerprints }`,
+ * where each fingerprint is a full, line-INSENSITIVE SHA-256 (so unrelated edits
+ * that shift line numbers no longer invalidate a baseline).
  */
 
-import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import type { Finding } from "@qproof/core";
+import {
+  applyBaseline as coreApplyBaseline,
+  baselineFromFindings,
+  BASELINE_VERSION,
+  fingerprintFinding,
+  loadBaseline,
+  saveBaseline,
+} from "@qproof/core";
+import type { Baseline, Finding } from "@qproof/core";
 
-/** Current on-disk baseline schema version. */
-export const BASELINE_VERSION = 1 as const;
-
-/** Shape of a baseline file on disk. */
-export interface BaselineFile {
-  /** Schema version, for forward compatibility. */
-  version: number;
-  /** Sorted, de-duplicated finding fingerprints. */
-  fingerprints: string[];
-}
+// Re-export core's canonical primitives so downstream tools (and tests) can use
+// them through `@qproof/qscan` without reaching into `@qproof/core` internals.
+export { baselineFromFindings, BASELINE_VERSION, fingerprintFinding, loadBaseline, saveBaseline };
+export type { Baseline };
 
 /**
- * Compute a stable fingerprint for a finding.
- *
- * The hash inputs are `ruleId|file|snippet|line`. The result is the first 12
- * hex characters of the SHA-256 digest — short enough to read in a diff, wide
- * enough (48 bits) to avoid collisions in realistic repositories.
+ * Compute a stable fingerprint for a finding. Alias for core's
+ * {@link fingerprintFinding}; kept under the historical name `fingerprint` for
+ * source compatibility with existing call sites and tests.
  */
-export function fingerprint(finding: Finding): string {
-  const { ruleId, location } = finding;
-  const snippet = location.snippet ?? "";
-  const line = location.line;
-  const input = `${ruleId}|${location.file}|${snippet}|${line}`;
-  return createHash("sha256").update(input).digest("hex").slice(0, 12);
-}
+export const fingerprint = fingerprintFinding;
 
 /**
- * Partition findings into those kept and those suppressed by the baseline.
+ * Partition findings into those kept and those suppressed by a baseline.
+ *
+ * Wraps core's {@link coreApplyBaseline} (which takes a {@link Baseline} and
+ * returns `{ newFindings, suppressed }`) but preserves qScan's historical
+ * `{ kept, suppressed }` shape and its lenient `ReadonlySet<string>` overload so
+ * existing callers keep working.
  *
  * @param findings All findings produced by a scan.
- * @param baseline Set of accepted fingerprints (e.g. from {@link readBaseline}).
- * @returns `kept` are findings not present in the baseline; `suppressed` are
- *   the ones that were.
+ * @param baseline Either a {@link Baseline} object or a set of accepted
+ *   fingerprints.
  */
 export function applyBaseline(
-  findings: Finding[],
-  baseline: ReadonlySet<string>,
+  findings: readonly Finding[],
+  baseline: Baseline | ReadonlySet<string>,
 ): { kept: Finding[]; suppressed: Finding[] } {
-  const kept: Finding[] = [];
-  const suppressed: Finding[] = [];
-  for (const finding of findings) {
-    if (baseline.has(fingerprint(finding))) {
-      suppressed.push(finding);
-    } else {
-      kept.push(finding);
-    }
-  }
-  return { kept, suppressed };
-}
-
-/** Build a {@link BaselineFile} from a set of findings. */
-export function buildBaseline(findings: Finding[]): BaselineFile {
-  const fingerprints = Array.from(new Set(findings.map(fingerprint))).sort();
-  return { version: BASELINE_VERSION, fingerprints };
+  const resolved: Baseline =
+    baseline instanceof Set
+      ? { version: BASELINE_VERSION, fingerprints: [...baseline] }
+      : (baseline as Baseline);
+  const { newFindings, suppressed } = coreApplyBaseline(findings, resolved);
+  return { kept: newFindings, suppressed };
 }
 
 /**
- * Read and validate a baseline file from disk.
+ * Build a {@link Baseline} from a set of findings (deduped + sorted). Alias for
+ * core's {@link baselineFromFindings} under qScan's historical name.
+ */
+export function buildBaseline(findings: readonly Finding[]): Baseline {
+  return baselineFromFindings(findings);
+}
+
+/**
+ * Read a baseline file from disk and return its accepted fingerprints as a set.
  *
- * @throws {Error} If the file cannot be read or is not a valid baseline.
+ * Unlike core's tolerant {@link loadBaseline} (which returns an empty baseline
+ * for a missing/unparseable file), this preserves qScan's historical *strict*
+ * contract: a missing or malformed file is an error, surfaced to the CLI as an
+ * I/O failure (exit 2).
+ *
+ * @throws {Error} If the file cannot be read or is not valid baseline JSON.
  */
 export async function readBaseline(path: string): Promise<Set<string>> {
+  const { readFile } = await import("node:fs/promises");
   let raw: string;
   try {
     raw = await readFile(path, "utf8");
@@ -97,8 +100,9 @@ export async function readBaseline(path: string): Promise<Set<string>> {
   return new Set(parsed.fingerprints);
 }
 
-/** Serialize and write a baseline file to disk (pretty-printed, trailing newline). */
-export async function writeBaseline(path: string, baseline: BaselineFile): Promise<void> {
+/** Serialize and write a baseline to disk (pretty-printed, trailing newline). */
+export async function writeBaseline(path: string, baseline: Baseline): Promise<void> {
+  const { writeFile } = await import("node:fs/promises");
   const json = `${JSON.stringify(baseline, null, 2)}\n`;
   try {
     await writeFile(path, json, "utf8");
@@ -108,13 +112,10 @@ export async function writeBaseline(path: string, baseline: BaselineFile): Promi
 }
 
 /** Narrowing type guard for parsed baseline JSON. */
-function isBaselineFile(value: unknown): value is BaselineFile {
+function isBaselineFile(value: unknown): value is Baseline {
   if (typeof value !== "object" || value === null) return false;
   const obj = value as Record<string, unknown>;
-  return (
-    Array.isArray(obj.fingerprints) &&
-    obj.fingerprints.every((f) => typeof f === "string")
-  );
+  return Array.isArray(obj.fingerprints) && obj.fingerprints.every((f) => typeof f === "string");
 }
 
 /** Extract a human message from an unknown thrown value. */

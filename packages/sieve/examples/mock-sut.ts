@@ -165,18 +165,25 @@ function keygen(param: string, seedB64?: string): { pk: string; sk: string } {
 function encaps(param: string, pkB64: string, coinsB64?: string): { ct: string; ss: string } {
   const sizes = SIZES[param] as Sizes;
   const pk = unb64(pkB64);
-  if (pk.length !== sizes.pk) throw { code: "invalid-length", message: `pk must be ${sizes.pk} bytes` };
+  if (pk.length !== sizes.pk)
+    throw { code: "invalid-length", message: `pk must be ${sizes.pk} bytes` };
   // FIPS 203 §7.2: reject a correctly-sized ek whose t̂ coefficients are not
   // reduced mod q. The well-behaved mock enforces this; MOCK_BREAK can disable
   // it to model an implementation that skips the modulus check.
   if (BREAK !== "accept-out-of-range-ek" && ekHasOutOfRangeCoeff(pk)) {
-    throw { code: "invalid-ek", message: "encapsulation key has an out-of-range coefficient (≥ q)" };
+    throw {
+      code: "invalid-ek",
+      message: "encapsulation key has an out-of-range coefficient (≥ q)",
+    };
   }
   const coins = coinsB64 ? unb64(coinsB64) : Buffer.from(`coins-${reqCounter++}-${Math.random()}`);
   // ct layout: [ pkTag(16) | body... ]. pkTag binds the ct to this pk so decaps
   // can detect corruption; body carries enough entropy to derive ss.
   const pkTag = h("pktag", pk).subarray(0, TAG_LEN);
-  let ct = Buffer.concat([pkTag, expand(h("ctbody", pk, coins), sizes.ct - TAG_LEN)]).subarray(0, sizes.ct);
+  let ct = Buffer.concat([pkTag, expand(h("ctbody", pk, coins), sizes.ct - TAG_LEN)]).subarray(
+    0,
+    sizes.ct,
+  );
   // ss is a PURE FUNCTION OF THE CT BODY so decaps (which sees ct, not coins)
   // can reproduce the identical value on the honest path. See reconcileSs.
   const ss = reconcileSs(param, ct);
@@ -191,8 +198,10 @@ function decaps(param: string, skB64: string, ctB64: string): { ss: string } {
   const sizes = SIZES[param] as Sizes;
   const sk = unb64(skB64);
   const ct = unb64(ctB64);
-  if (sk.length !== sizes.sk) throw { code: "invalid-length", message: `sk must be ${sizes.sk} bytes` };
-  if (ct.length !== sizes.ct) throw { code: "invalid-length", message: `ct must be ${sizes.ct} bytes` };
+  if (sk.length !== sizes.sk)
+    throw { code: "invalid-length", message: `sk must be ${sizes.sk} bytes` };
+  if (ct.length !== sizes.ct)
+    throw { code: "invalid-length", message: `ct must be ${sizes.ct} bytes` };
 
   const skPkTag = sk.subarray(0, TAG_LEN); // pk-tag stored at keygen
   const ctPkTag = ct.subarray(0, TAG_LEN); // pk-tag embedded by encaps
@@ -242,7 +251,8 @@ function pkFromSk(param: string, sk: Buffer): Buffer {
 function sign(param: string, skB64: string, msgB64: string): { sig: string } {
   const sizes = SIZES[param] as Sizes;
   const sk = unb64(skB64);
-  if (sk.length !== sizes.sk) throw { code: "invalid-length", message: `sk must be ${sizes.sk} bytes` };
+  if (sk.length !== sizes.sk)
+    throw { code: "invalid-length", message: `sk must be ${sizes.sk} bytes` };
   const msg = unb64(msgB64);
   // sig layout: [ salt(16) | mac... ] where the whole `mac` region is a keyed
   // expansion of (pk, msg, salt). The random salt makes signing non-
@@ -252,7 +262,8 @@ function sign(param: string, skB64: string, msgB64: string): { sig: string } {
   const pk = pkFromSk(param, sk); // pk = expand(H("pk"|sk)) from keygen
   // Hedged by default (random salt). MOCK_BREAK=deterministic-sign forces a
   // deterministic salt so the signing-mode advisory probe reports DETERMINISTIC.
-  const saltEntropy = BREAK === "deterministic-sign" ? Buffer.alloc(0) : Buffer.from(`${Math.random()}`);
+  const saltEntropy =
+    BREAK === "deterministic-sign" ? Buffer.alloc(0) : Buffer.from(`${Math.random()}`);
   const salt = h("sigsalt", sk, msg, saltEntropy).subarray(0, TAG_LEN);
   const mac = expand(h("vmac", pk, msg, salt), sizes.sig - TAG_LEN);
   let sig = Buffer.concat([salt, mac]).subarray(0, sizes.sig);
@@ -264,8 +275,10 @@ function verify(param: string, pkB64: string, msgB64: string, sigB64: string): {
   const sizes = SIZES[param] as Sizes;
   const pk = unb64(pkB64);
   const sig = unb64(sigB64);
-  if (pk.length !== sizes.pk) throw { code: "invalid-length", message: `pk must be ${sizes.pk} bytes` };
-  if (sig.length !== sizes.sig) throw { code: "invalid-length", message: `sig must be ${sizes.sig} bytes` };
+  if (pk.length !== sizes.pk)
+    throw { code: "invalid-length", message: `pk must be ${sizes.pk} bytes` };
+  if (sig.length !== sizes.sig)
+    throw { code: "invalid-length", message: `sig must be ${sizes.sig} bytes` };
   const msg = unb64(msgB64);
   if (BREAK === "verify-always-true") return { valid: true };
   const salt = sig.subarray(0, TAG_LEN);
@@ -294,7 +307,8 @@ interface Req {
 
 function handle(req: Req): object {
   const sizes = SIZES[req.param];
-  if (!sizes) return { id: req.id, ok: false, code: "unsupported", message: `unknown param ${req.param}` };
+  if (!sizes)
+    return { id: req.id, ok: false, code: "unsupported", message: `unknown param ${req.param}` };
 
   try {
     switch (req.op) {
@@ -308,12 +322,14 @@ function handle(req: Req): object {
         return { id: req.id, ok: true, ct: r.ct, ss: r.ss };
       }
       case "decaps": {
-        if (req.sk === undefined || req.ct === undefined) throw { code: "bad-request", message: "decaps needs sk, ct" };
+        if (req.sk === undefined || req.ct === undefined)
+          throw { code: "bad-request", message: "decaps needs sk, ct" };
         const r = decaps(req.param, req.sk, req.ct);
         return { id: req.id, ok: true, ss: r.ss };
       }
       case "sign": {
-        if (req.sk === undefined || req.msg === undefined) throw { code: "bad-request", message: "sign needs sk, msg" };
+        if (req.sk === undefined || req.msg === undefined)
+          throw { code: "bad-request", message: "sign needs sk, msg" };
         const r = sign(req.param, req.sk, req.msg);
         return { id: req.id, ok: true, sig: r.sig };
       }
@@ -347,7 +363,10 @@ function main(): void {
     try {
       req = JSON.parse(trimmed) as Req;
     } catch {
-      process.stdout.write(JSON.stringify({ id: 0, ok: false, code: "bad-json", message: "unparseable request" }) + "\n");
+      process.stdout.write(
+        JSON.stringify({ id: 0, ok: false, code: "bad-json", message: "unparseable request" }) +
+          "\n",
+      );
       return;
     }
     if (BREAK === "crash-on-decaps" && req.op === "decaps") {

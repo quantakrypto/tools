@@ -12,13 +12,7 @@
  * here as "worth a closer look", not proof.
  */
 
-import {
-  type Category,
-  type CategoryResult,
-  type Check,
-  pass,
-  skip,
-} from "./types.js";
+import { type Category, type CategoryResult, type Check, pass, skip } from "./types.js";
 import { flipBitB64, kemDecapsRaw, kemEncaps, kemKeygen, requireKem } from "./helpers.js";
 import { toB64 } from "../protocol.js";
 

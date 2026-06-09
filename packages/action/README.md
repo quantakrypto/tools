@@ -62,7 +62,7 @@ A ready-to-copy workflow lives at
 | `fail-on-findings` | `true` | When `true`, exit non-zero if any finding at/above the threshold remains. Set `false` to report only. |
 | `format` | `sarif` | Report format written to `output`: `sarif` or `json`. |
 | `output` | `qproof.sarif.json` | Path of the report file to write (relative to the workspace). |
-| `baseline` | _(none)_ | Path to a prior qproof report. Findings present in it are suppressed, so only **new** crypto fails. |
+| `baseline` | _(none)_ | Path to a qScan baseline file (`{ version, fingerprints }`, as written by `qscan --write-baseline`). Findings whose fingerprint it lists are suppressed, so only **new** crypto fails. |
 | `comment-pr` | `false` | When `true` (and a token + PR context exist), post a summary comment on the PR. Never fails the build. |
 | `github-token` | _(none)_ | Token used to comment on the PR. Usually `${{ github.token }}`. |
 
@@ -92,27 +92,52 @@ anchored to the finding's file and line so they appear in the PR diff.
 
 ## How baselines work
 
-A baseline is simply a previously written qproof report (SARIF or JSON). On each
-run, the action computes a stable **fingerprint** for every finding — its rule
-id, file, algorithm, and message, *excluding line/column* so that unrelated
-edits which merely shift code up or down a file don't resurface old findings.
-Any finding whose fingerprint already appears in the baseline is suppressed;
-only genuinely new quantum-vulnerable crypto can fail the build.
+The Action and the [`qscan`](../qscan) CLI share **one** baseline format and
+**one** fingerprint, defined in [`@qproof/core`](../core). A baseline is a small
+versioned file — `{ "version": 1, "fingerprints": [ … ] }` — written by
+`qscan --write-baseline`. The fingerprint is a stable SHA-256 of the finding's
+rule id, file, and (whitespace-normalized) code snippet, *excluding line/column*
+so that unrelated edits which merely shift code up or down a file don't resurface
+old findings. Any finding whose fingerprint already appears in the baseline is
+suppressed; only genuinely new quantum-vulnerable crypto can fail the build.
+
+Because the format is shared, a baseline produced locally with the CLI is
+honoured byte-for-byte by the Action in CI, and vice versa.
 
 Typical adoption flow:
 
-1. Run the scan once on `main` and commit the report as your baseline, e.g.
-   `.qproof/baseline.sarif.json`.
+1. Run `qscan --write-baseline .qproof/baseline.json` once on `main` and commit
+   the baseline file.
 2. Point `baseline:` at that file. From then on, pull requests fail only when
    they introduce **new** findings at/above the threshold.
-3. Refresh the baseline whenever you remediate, by re-committing an updated report.
+3. Refresh the baseline whenever you remediate, by re-running `--write-baseline`
+   and re-committing it.
 
 ## Design
 
-- **Zero runtime dependencies** — Node built-ins only. The small slice of the
-  GitHub Actions toolkit this action needs (input parsing, outputs, annotations,
-  PR comments) is implemented directly in [`src/io.ts`](src/io.ts) and
-  [`src/main.ts`](src/main.ts); no `@actions/core` or `@actions/github`.
-- **Testable core** — input parsing, the threshold→exit decision, baseline
-  application, summary rendering, and the annotation wire format are pure
+- **One code path with the CLI** — the scan, report rendering, and baseline are
+  not re-implemented here. The Action calls `runQscan` / `renderReport` from
+  [`@qproof/qscan`](../qscan) and the shared baseline
+  (`fingerprintFinding` / `applyBaseline` / `loadBaseline`) from
+  [`@qproof/core`](../core), so the Action and the `qscan` CLI produce identical
+  findings, reports, and baseline semantics. This module is just the
+  GitHub-runner glue (inputs, outputs, annotations, PR comment, exit policy).
+- **Output-injection hardened** — a finding's `file`/`message`/`ruleId` come from
+  the *scanned* repo, so in a fork PR they are attacker-controlled. Two sinks the
+  Action writes with a token are escaped accordingly:
+  - the **PR-comment Markdown table** — every cell is escaped by `mdCell`
+    ([`src/escape.ts`](src/escape.ts)): pipes (`\|`), backticks, CR/LF, and HTML
+    (`&`, `<`, `>`) so a crafted filename cannot break the table or inject HTML;
+  - the **`::error file=…,line=…::message` workflow command** — the message is
+    `escapeData`-encoded (`%`, CR, LF → `%25`/`%0D`/`%0A`) and command properties
+    are `escapeProperty`-encoded (additionally `,` → `%2C`, `:` → `%3A`) in
+    [`src/io.ts`](src/io.ts), so an attacker-named file cannot break out of the
+    command.
+- **Zero runtime dependencies** — only `@qproof/core` + `@qproof/qscan` (and Node
+  built-ins). The small slice of the GitHub Actions toolkit this action needs
+  (input parsing, outputs, annotations, PR comments) is implemented directly in
+  [`src/io.ts`](src/io.ts) and [`src/main.ts`](src/main.ts); no `@actions/core`
+  or `@actions/github`.
+- **Testable core** — input parsing, the threshold→exit decision, summary
+  rendering, the escaping helpers, and the annotation wire format are pure
   functions, unit-tested with `node:test` (no real runner required).

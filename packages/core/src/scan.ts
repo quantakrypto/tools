@@ -103,9 +103,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
 
   for await (const rel of relPaths) {
     // In single-file mode, walkFiles yields the basename; map back to the file.
-    const absPath = singleFileName
-      ? options.root
-      : path.join(baseDir, ...rel.split("/"));
+    const absPath = singleFileName ? options.root : path.join(baseDir, ...rel.split("/"));
     const reportedPath = singleFileName ? toPosix(rel) : rel;
 
     options.onFile?.(reportedPath);
@@ -156,10 +154,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
  * deterministic output. Size limits are enforced later (we still read manifests
  * over the cap). Non-existent files are simply skipped at read time.
  */
-async function* filterExplicitFiles(
-  files: string[],
-  options: ScanOptions,
-): AsyncGenerator<string> {
+async function* filterExplicitFiles(files: string[], options: ScanOptions): AsyncGenerator<string> {
   const include = options.include ?? [];
   const exclude = options.exclude ?? [];
   const seen = new Set<string>();

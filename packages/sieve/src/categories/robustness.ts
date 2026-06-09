@@ -11,14 +11,7 @@
  * rather than off-by-N lengths. Together they map to the AF-05 family.
  */
 
-import {
-  type Category,
-  type CategoryResult,
-  type Check,
-  fail,
-  pass,
-  rollUp,
-} from "./types.js";
+import { type Category, type CategoryResult, type Check, fail, pass, rollUp } from "./types.js";
 import { requireKem } from "./helpers.js";
 import type { Response } from "../protocol.js";
 
@@ -47,8 +40,7 @@ export const robustness: Category = async (ctx): Promise<CategoryResult> => {
     },
     {
       name: "encaps-garbage-pk",
-      run: () =>
-        ctx.runner.send({ family: "ml-kem", param, op: "encaps", pk: "!!!not base64!!!" }),
+      run: () => ctx.runner.send({ family: "ml-kem", param, op: "encaps", pk: "!!!not base64!!!" }),
     },
     {
       name: "encaps-oversize-pk",
@@ -101,10 +93,7 @@ export const robustness: Category = async (ctx): Promise<CategoryResult> => {
       }
     } catch (err) {
       checks.push(
-        fail(
-          probe.name,
-          `SUT crashed/hung on malformed input: ${(err as Error).message}`,
-        ),
+        fail(probe.name, `SUT crashed/hung on malformed input: ${(err as Error).message}`),
       );
     }
   }

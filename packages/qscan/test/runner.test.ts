@@ -93,7 +93,10 @@ test("baseline only suppresses matching fingerprints", async () => {
     const fresh = makeFinding({ severity: "critical", location: { file: "src/new.ts", line: 2 } });
     const baselinePath = join(dir, "b.json");
 
-    await runQscan({ path: ".", writeBaseline: baselinePath }, { scanFn: async () => makeResult([known]) });
+    await runQscan(
+      { path: ".", writeBaseline: baselinePath },
+      { scanFn: async () => makeResult([known]) },
+    );
 
     const run = await runQscan(
       { path: ".", baseline: baselinePath, severityThreshold: "high" },

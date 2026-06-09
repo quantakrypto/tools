@@ -50,7 +50,9 @@ test("fingerprint differs on ruleId / file / snippet", () => {
   assert.notEqual(fingerprintFinding(base), fingerprintFinding(finding({ ruleId: "other" })));
   assert.notEqual(
     fingerprintFinding(base),
-    fingerprintFinding(finding({ location: { file: "src/b.ts", line: 10, snippet: base.location.snippet } })),
+    fingerprintFinding(
+      finding({ location: { file: "src/b.ts", line: 10, snippet: base.location.snippet } }),
+    ),
   );
   assert.notEqual(
     fingerprintFinding(base),
@@ -71,7 +73,10 @@ test("baselineFromFindings dedupes and sorts", () => {
 
 test("applyBaseline splits new vs suppressed", () => {
   const known = finding();
-  const fresh = finding({ ruleId: "node-crypto-dh", location: { file: "src/a.ts", line: 5, snippet: "dh" } });
+  const fresh = finding({
+    ruleId: "node-crypto-dh",
+    location: { file: "src/a.ts", line: 5, snippet: "dh" },
+  });
   const baseline = baselineFromFindings([known]);
   const { newFindings, suppressed } = applyBaseline([known, fresh], baseline);
   assert.equal(suppressed.length, 1);

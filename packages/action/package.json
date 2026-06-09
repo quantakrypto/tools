@@ -3,11 +3,27 @@
   "version": "0.1.0",
   "description": "qproof Action — fail CI when new quantum-vulnerable cryptography lands. GitHub Action wrapping qScan.",
   "license": "Apache-2.0",
+  "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
+  "homepage": "https://github.com/dandelionlabs-io/qproof-tools/tree/main/packages/action#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dandelionlabs-io/qproof-tools.git",
+    "directory": "packages/action"
+  },
+  "bugs": {
+    "url": "https://github.com/dandelionlabs-io/qproof-tools/issues"
+  },
   "type": "module",
   "private": true,
   "main": "./dist/main.js",
-  "files": ["dist", "action.yml", "README.md"],
-  "engines": { "node": ">=20" },
+  "files": [
+    "dist",
+    "action.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@qproof/core": "0.1.0",
     "@qproof/qscan": "0.1.0"

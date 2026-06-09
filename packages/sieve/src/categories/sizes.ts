@@ -19,14 +19,7 @@
  * its inputs can read out of bounds or accept malformed material.
  */
 
-import {
-  type Category,
-  type CategoryResult,
-  type Check,
-  fail,
-  pass,
-  rollUp,
-} from "./types.js";
+import { type Category, type CategoryResult, type Check, fail, pass, rollUp } from "./types.js";
 import {
   kemDecapsRaw,
   kemEncapsRaw,
@@ -84,8 +77,16 @@ export const sizes: Category = async (ctx): Promise<CategoryResult> => {
       );
       checks.push(
         ss.length === km.sharedSecret
-          ? pass("ss-length", `shared secret is ${ss.length} bytes (expected ${km.sharedSecret})`, BUG)
-          : fail("ss-length", `shared secret is ${ss.length} bytes, expected ${km.sharedSecret}`, BUG),
+          ? pass(
+              "ss-length",
+              `shared secret is ${ss.length} bytes (expected ${km.sharedSecret})`,
+              BUG,
+            )
+          : fail(
+              "ss-length",
+              `shared secret is ${ss.length} bytes, expected ${km.sharedSecret}`,
+              BUG,
+            ),
       );
     } else {
       checks.push(fail("encaps-shape", "encaps did not return ct/ss for a valid public key", BUG));
@@ -101,35 +102,25 @@ export const sizes: Category = async (ctx): Promise<CategoryResult> => {
 
   // --- B. Negative: wrong-length inputs must be rejected cleanly -------------
   // Wrong-length public key to encaps.
-  await expectReject(
-    checks,
-    "encaps-pk-too-short",
-    () => kemEncapsRaw(ctx.runner, param, zerosB64(km.publicKey - 1)),
+  await expectReject(checks, "encaps-pk-too-short", () =>
+    kemEncapsRaw(ctx.runner, param, zerosB64(km.publicKey - 1)),
   );
-  await expectReject(
-    checks,
-    "encaps-pk-too-long",
-    () => kemEncapsRaw(ctx.runner, param, zerosB64(km.publicKey + 1)),
+  await expectReject(checks, "encaps-pk-too-long", () =>
+    kemEncapsRaw(ctx.runner, param, zerosB64(km.publicKey + 1)),
   );
 
   // Wrong-length ciphertext to decaps (use a valid-length sk of zeros).
   const skZeros = zerosB64(km.secretKey);
-  await expectReject(
-    checks,
-    "decaps-ct-too-short",
-    () => kemDecapsRaw(ctx.runner, param, skZeros, zerosB64(km.ciphertext - 1)),
+  await expectReject(checks, "decaps-ct-too-short", () =>
+    kemDecapsRaw(ctx.runner, param, skZeros, zerosB64(km.ciphertext - 1)),
   );
-  await expectReject(
-    checks,
-    "decaps-ct-too-long",
-    () => kemDecapsRaw(ctx.runner, param, skZeros, zerosB64(km.ciphertext + 1)),
+  await expectReject(checks, "decaps-ct-too-long", () =>
+    kemDecapsRaw(ctx.runner, param, skZeros, zerosB64(km.ciphertext + 1)),
   );
 
   // Wrong-length secret key to decaps (use a valid-length ct of zeros).
-  await expectReject(
-    checks,
-    "decaps-sk-too-short",
-    () => kemDecapsRaw(ctx.runner, param, zerosB64(km.secretKey - 1), zerosB64(km.ciphertext)),
+  await expectReject(checks, "decaps-sk-too-short", () =>
+    kemDecapsRaw(ctx.runner, param, zerosB64(km.secretKey - 1), zerosB64(km.ciphertext)),
   );
 
   // --- C. FIPS 203 §7.2 encapsulation-key modulus-range check ---------------
@@ -141,10 +132,8 @@ export const sizes: Category = async (ctx): Promise<CategoryResult> => {
   // 12-bit coefficient to 0xFFF (4095 ≥ 3329) while preserving the length, then
   // require encaps to reject it with a defined error. We assert NO crypto bytes.
   if (pkB64.length > 0) {
-    await expectReject(
-      checks,
-      "encaps-ek-coeff-out-of-range",
-      () => kemEncapsRaw(ctx.runner, param, outOfRangeEk(pkB64)),
+    await expectReject(checks, "encaps-ek-coeff-out-of-range", () =>
+      kemEncapsRaw(ctx.runner, param, outOfRangeEk(pkB64)),
     );
   } else {
     checks.push(

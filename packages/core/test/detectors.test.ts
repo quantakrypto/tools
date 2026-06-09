@@ -73,7 +73,10 @@ test("Node crypto createSign signatures are high but not HNDL", () => {
 });
 
 test("Node crypto EC keygen is key-exchange-capable and HNDL-exposed (P0-4)", () => {
-  const f = byRule(run("a.ts", "const kp = generateKeyPairSync('ec', { namedCurve: 'P-256' });"), "node-crypto-keygen");
+  const f = byRule(
+    run("a.ts", "const kp = generateKeyPairSync('ec', { namedCurve: 'P-256' });"),
+    "node-crypto-keygen",
+  );
   assert.ok(f, "ec keygen detected");
   // EC keys feed BOTH ECDSA (sign) and ECDH (key agreement); the ECDH path is
   // HNDL-exposed, so the finding must NOT be signature-only / hndl:false.
@@ -86,14 +89,20 @@ test("Node crypto EC keygen is key-exchange-capable and HNDL-exposed (P0-4)", ()
 });
 
 test("Node crypto one-shot sign/verify is flagged", () => {
-  const f = byRule(run("a.ts", "crypto.sign('sha256', data, privateKey);"), "node-crypto-sign-oneshot");
+  const f = byRule(
+    run("a.ts", "crypto.sign('sha256', data, privateKey);"),
+    "node-crypto-sign-oneshot",
+  );
   assert.ok(f, "one-shot crypto.sign detected");
   assert.equal(f.category, "signature");
   assert.equal(f.hndl, false);
 });
 
 test("Node crypto getDiffieHellman MODP group is HNDL", () => {
-  const f = byRule(run("a.ts", "const dh = crypto.getDiffieHellman('modp14');"), "node-crypto-dh-modp");
+  const f = byRule(
+    run("a.ts", "const dh = crypto.getDiffieHellman('modp14');"),
+    "node-crypto-dh-modp",
+  );
   assert.ok(f, "modp group detected");
   assert.equal(f.algorithm, "DH");
   assert.equal(f.hndl, true);
@@ -118,18 +127,27 @@ test("SSH public key and cert signature algorithm are config-scope findings", ()
   assert.ok(ssh, "ssh-ed25519 public key detected");
   assert.equal(ssh.algorithm, "EdDSA");
 
-  const cert = byRule(run("cert.cnf", "signatureAlgorithm: sha256WithRSAEncryption"), "cert-signature-algorithm");
+  const cert = byRule(
+    run("cert.cnf", "signatureAlgorithm: sha256WithRSAEncryption"),
+    "cert-signature-algorithm",
+  );
   assert.ok(cert, "cert signature algorithm detected");
   assert.equal(cert.algorithm, "RSA");
 });
 
 test("DSA and PGP PEM blocks are detected (C7)", () => {
-  const dsa = byRule(run("k.pem", "-----BEGIN DSA PRIVATE KEY-----\nx\n-----END DSA PRIVATE KEY-----"), "pem-dsa-private-key");
+  const dsa = byRule(
+    run("k.pem", "-----BEGIN DSA PRIVATE KEY-----\nx\n-----END DSA PRIVATE KEY-----"),
+    "pem-dsa-private-key",
+  );
   assert.ok(dsa, "DSA PEM key detected");
   assert.equal(dsa.algorithm, "DSA");
 
   const pgp = byRule(
-    run("secret.asc", "-----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK-----"),
+    run(
+      "secret.asc",
+      "-----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK-----",
+    ),
     "pem-pgp-private-key",
   );
   assert.ok(pgp, "PGP private key block detected");
@@ -157,7 +175,8 @@ test("Node crypto x25519/ed25519 are flagged low", () => {
 });
 
 test("WebCrypto RSA-OAEP is KEM + HNDL", () => {
-  const src = "await crypto.subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 2048 }, true, ['encrypt']);";
+  const src =
+    "await crypto.subtle.generateKey({ name: 'RSA-OAEP', modulusLength: 2048 }, true, ['encrypt']);";
   const f = byRule(run("a.ts", src), "webcrypto-classical");
   assert.ok(f);
   assert.equal(f.algorithm, "RSA");
@@ -189,7 +208,10 @@ test("WebCrypto algorithm string far from a subtle call is ignored", () => {
 });
 
 test("node-forge RSA key generation", () => {
-  const f = byRule(run("a.js", "forge.pki.rsa.generateKeyPair({ bits: 2048 });"), "forge-rsa-keygen");
+  const f = byRule(
+    run("a.js", "forge.pki.rsa.generateKeyPair({ bits: 2048 });"),
+    "forge-rsa-keygen",
+  );
   assert.ok(f);
   assert.equal(f.algorithm, "RSA");
 });
@@ -213,14 +235,20 @@ test("jsrsasign key generation", () => {
 });
 
 test("JWT RS256 algorithm string", () => {
-  const f = byRule(run("a.ts", "jwt.sign(payload, key, { algorithm: 'RS256' });"), "jwt-classical-alg");
+  const f = byRule(
+    run("a.ts", "jwt.sign(payload, key, { algorithm: 'RS256' });"),
+    "jwt-classical-alg",
+  );
   assert.ok(f);
   assert.equal(f.algorithm, "RSA");
   assert.equal(f.category, "signature");
 });
 
 test("JWT ES256 → ECDSA, EdDSA → EdDSA", () => {
-  const es = byRule(run("a.ts", "verify(token, key, { algorithms: ['ES256'] });"), "jwt-classical-alg");
+  const es = byRule(
+    run("a.ts", "verify(token, key, { algorithms: ['ES256'] });"),
+    "jwt-classical-alg",
+  );
   assert.ok(es);
   assert.equal(es.algorithm, "ECDSA");
 

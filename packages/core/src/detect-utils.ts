@@ -3,13 +3,7 @@
  * into a 1-based line/column, extracting a trimmed single-line snippet, and a
  * small factory for building Finding objects with consistent remediation text.
  */
-import type {
-  AlgorithmFamily,
-  Confidence,
-  Finding,
-  FindingCategory,
-  Severity,
-} from "./types.js";
+import type { AlgorithmFamily, Confidence, Finding, FindingCategory, Severity } from "./types.js";
 import { remediationText } from "./remediation.js";
 
 /** A 1-based line/column position derived from a character offset. */
@@ -114,14 +108,7 @@ export function hasExtension(filePath: string, exts: readonly string[]): boolean
 }
 
 /** JavaScript / TypeScript source extensions handled by the source detectors. */
-export const JS_TS_EXTENSIONS: readonly string[] = [
-  ".js",
-  ".jsx",
-  ".ts",
-  ".tsx",
-  ".mjs",
-  ".cjs",
-];
+export const JS_TS_EXTENSIONS: readonly string[] = [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"];
 
 /**
  * Given a SORTED ascending array of call offsets, return true when `idx` is at

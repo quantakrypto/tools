@@ -3,8 +3,20 @@
   "version": "0.1.0",
   "description": "Sieve — conformance battery for ML-KEM / ML-DSA implementations. Drives any implementation over a simple stdin/stdout JSON protocol. Zero runtime dependencies.",
   "license": "Apache-2.0",
+  "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
+  "homepage": "https://github.com/dandelionlabs-io/qproof-tools/tree/main/packages/sieve#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dandelionlabs-io/qproof-tools.git",
+    "directory": "packages/sieve"
+  },
+  "bugs": {
+    "url": "https://github.com/dandelionlabs-io/qproof-tools/issues"
+  },
   "type": "module",
-  "bin": { "sieve": "./dist/cli.js" },
+  "bin": {
+    "sieve": "./dist/cli.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -13,9 +25,17 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "vectors", "README.md"],
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "vectors",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -b",
     "test": "node --import tsx --test test/*.test.ts"

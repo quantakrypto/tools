@@ -135,11 +135,7 @@ export function notice(message: string, properties?: AnnotationProperties): void
  * file named by `$GITHUB_OUTPUT`. With no such file (local/test runs) it falls
  * back to a deprecated-but-harmless stdout command so callers still see it.
  */
-export function setOutput(
-  name: string,
-  value: string,
-  env: NodeJS.ProcessEnv = process.env,
-): void {
+export function setOutput(name: string, value: string, env: NodeJS.ProcessEnv = process.env): void {
   const filePath = env["GITHUB_OUTPUT"];
   if (filePath) {
     // Heredoc form is required for values that may contain newlines.

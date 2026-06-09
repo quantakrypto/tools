@@ -9,7 +9,10 @@ import type { KemSizes, ParamSet } from "../sizes.js";
 
 /** A response we expected to succeed but did not. */
 export class UnexpectedResponse extends Error {
-  constructor(message: string, public readonly response: Response) {
+  constructor(
+    message: string,
+    public readonly response: Response,
+  ) {
     super(message);
     this.name = "UnexpectedResponse";
   }
@@ -21,7 +24,12 @@ export async function kemKeygen(
   param: ParamSet,
   seed?: string,
 ): Promise<{ pk: Uint8Array; sk: Uint8Array }> {
-  const resp = await runner.send({ family: "ml-kem", param, op: "keygen", ...(seed ? { seed } : {}) });
+  const resp = await runner.send({
+    family: "ml-kem",
+    param,
+    op: "keygen",
+    ...(seed ? { seed } : {}),
+  });
   if (resp.ok !== true || !("pk" in resp) || !("sk" in resp)) {
     throw new UnexpectedResponse("expected keygen pk/sk result", resp);
   }
@@ -73,11 +81,7 @@ export function kemDecapsRaw(
 }
 
 /** Raw encaps returning the full response (for error-path tests). */
-export function kemEncapsRaw(
-  runner: Runner,
-  param: ParamSet,
-  pkB64: string,
-): Promise<Response> {
+export function kemEncapsRaw(runner: Runner, param: ParamSet, pkB64: string): Promise<Response> {
   return runner.send({ family: "ml-kem", param, op: "encaps", pk: pkB64 });
 }
 

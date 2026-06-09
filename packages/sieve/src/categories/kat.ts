@@ -54,7 +54,9 @@ export const kat: Category = async (ctx): Promise<CategoryResult> => {
     return {
       category: "kat",
       status: "fail",
-      checks: [fail("load", `could not load vectors from ${ctx.vectorsDir}: ${(err as Error).message}`)],
+      checks: [
+        fail("load", `could not load vectors from ${ctx.vectorsDir}: ${(err as Error).message}`),
+      ],
       summary: "vector load failed",
     };
   }
@@ -96,7 +98,9 @@ export const kat: Category = async (ctx): Promise<CategoryResult> => {
   }
 
   if (okCount > 0) {
-    checks.push(pass("kat", `${okCount}/${relevant.length} ${param} vectors matched expected values`));
+    checks.push(
+      pass("kat", `${okCount}/${relevant.length} ${param} vectors matched expected values`),
+    );
   }
 
   const status = rollUp(checks);
@@ -133,7 +137,10 @@ async function checkVector(
         seed: toB64(v.seed),
       });
       if (resp.ok !== true || !("pk" in resp) || !("sk" in resp)) {
-        return { ok: false, detail: "seeded keygen did not return pk/sk (SUT may not support seeds)" };
+        return {
+          ok: false,
+          detail: "seeded keygen did not return pk/sk (SUT may not support seeds)",
+        };
       }
       const pkOk = bytesEqual(fromB64(resp.pk), v.pk);
       const skOk = bytesEqual(fromB64(resp.sk), v.sk);
@@ -151,7 +158,10 @@ async function checkVector(
         coins: toB64(v.coins),
       });
       if (resp.ok !== true || !("ct" in resp) || !("ss" in resp)) {
-        return { ok: false, detail: "deterministic encaps did not return ct/ss (SUT may not support coins)" };
+        return {
+          ok: false,
+          detail: "deterministic encaps did not return ct/ss (SUT may not support coins)",
+        };
       }
       const ctOk = bytesEqual(fromB64(resp.ct), v.ct);
       const ssOk = bytesEqual(fromB64(resp.ss), v.ss);

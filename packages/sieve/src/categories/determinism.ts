@@ -8,24 +8,22 @@
  * This is a self-consistency property; no external vectors are required.
  */
 
+import { type Category, type CategoryResult, type Check, fail, pass, rollUp } from "./types.js";
 import {
-  type Category,
-  type CategoryResult,
-  type Check,
-  fail,
-  pass,
-  rollUp,
-} from "./types.js";
-import { bytesEqual, kemDecaps, kemEncaps, kemKeygen, mapBounded, requireKem, UnexpectedResponse } from "./helpers.js";
+  bytesEqual,
+  kemDecaps,
+  kemEncaps,
+  kemKeygen,
+  mapBounded,
+  requireKem,
+  UnexpectedResponse,
+} from "./helpers.js";
 import { toB64 } from "../protocol.js";
 
 const REPEATS = 3;
 
 /** Outcome of one determinism iteration. */
-type Outcome =
-  | { kind: "ok" }
-  | { kind: "unstable" }
-  | { kind: "error"; detail: string };
+type Outcome = { kind: "ok" } | { kind: "unstable" } | { kind: "error"; detail: string };
 
 export const determinism: Category = async (ctx): Promise<CategoryResult> => {
   const checks: Check[] = [];

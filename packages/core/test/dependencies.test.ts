@@ -71,7 +71,10 @@ test("package-lock.json v3 packages map is parsed", () => {
 test("HNDL flag reflects confidentiality vs signature-only packages", () => {
   // jose exposes RSA/ECDH → HNDL true; ecpair is ECDSA-only → HNDL false.
   const joseF = scanManifest("package.json", JSON.stringify({ dependencies: { jose: "5" } }))[0];
-  const ecpairF = scanManifest("package.json", JSON.stringify({ dependencies: { ecpair: "2" } }))[0];
+  const ecpairF = scanManifest(
+    "package.json",
+    JSON.stringify({ dependencies: { ecpair: "2" } }),
+  )[0];
   assert.equal(joseF.hndl, true);
   assert.equal(ecpairF.hndl, false);
 });

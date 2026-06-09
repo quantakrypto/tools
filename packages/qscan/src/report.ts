@@ -11,7 +11,7 @@
  * serialized shape stays consistent across every tool in the monorepo.
  */
 
-import { toJson, toSarif } from "@qproof/core";
+import { toCbom, toJson, toSarif } from "@qproof/core";
 import type { Finding, ScanResult, Severity } from "@qproof/core";
 import { SEVERITY_ORDER, severityRank } from "./args.js";
 
@@ -45,7 +45,11 @@ const COLOR: Palette = {
  * `ScanResult` directly (which is already JSON-friendly) so reports never break.
  */
 export function renderJson(result: ScanResult): string {
-  return JSON.stringify(serialize(() => toJson(result), result), null, 2);
+  return JSON.stringify(
+    serialize(() => toJson(result), result),
+    null,
+    2,
+  );
 }
 
 /**
@@ -55,7 +59,20 @@ export function renderJson(result: ScanResult): string {
  * format always produces valid, ingestible output.
  */
 export function renderSarif(result: ScanResult): string {
-  return JSON.stringify(serialize(() => toSarif(result), fallbackSarif(result)), null, 2);
+  return JSON.stringify(
+    serialize(() => toSarif(result), fallbackSarif(result)),
+    null,
+    2,
+  );
+}
+
+/**
+ * Render a CycloneDX 1.6 CBOM (cryptographic bill of materials) for the scan,
+ * pretty-printed with no trailing newline. Delegates to core's `toCbom` so the
+ * serialized shape stays consistent across every tool in the monorepo.
+ */
+export function renderCbom(result: ScanResult): string {
+  return JSON.stringify(toCbom(result), null, 2);
 }
 
 /**
@@ -140,7 +157,9 @@ export function renderHuman(
   const lines: string[] = [];
 
   lines.push(`${c.bold}qScan — quantum-vulnerable cryptography report${c.reset}`);
-  lines.push(`${c.dim}root: ${result.root}  •  files scanned: ${filesScanned}  •  qscan v${result.toolVersion}${c.reset}`);
+  lines.push(
+    `${c.dim}root: ${result.root}  •  files scanned: ${filesScanned}  •  qscan v${result.toolVersion}${c.reset}`,
+  );
   lines.push("");
 
   if (findings.length === 0) {
@@ -157,7 +176,9 @@ export function renderHuman(
     return n > 0 ? `${severityColor(sev, c)}${n} ${sev}${c.reset}` : null;
   }).filter((s): s is string => s !== null);
 
-  lines.push(`${c.bold}${findings.length} finding${findings.length === 1 ? "" : "s"}${c.reset}  (${counts.join(", ")})`);
+  lines.push(
+    `${c.bold}${findings.length} finding${findings.length === 1 ? "" : "s"}${c.reset}  (${counts.join(", ")})`,
+  );
   if (inventory.hndlCount > 0) {
     lines.push(
       `${c.yellow}${inventory.hndlCount}${c.reset} exposed to harvest-now-decrypt-later (HNDL).`,
@@ -171,7 +192,9 @@ export function renderHuman(
   lines.push(`${c.bold}Top findings${c.reset}`);
   for (const f of top) {
     const loc = `${f.location.file}:${f.location.line}`;
-    lines.push(`  ${severityColor(f.severity, c)}${f.severity.padEnd(8)}${c.reset} ${c.cyan}${f.ruleId}${c.reset}  ${loc}`);
+    lines.push(
+      `  ${severityColor(f.severity, c)}${f.severity.padEnd(8)}${c.reset} ${c.cyan}${f.ruleId}${c.reset}  ${loc}`,
+    );
     lines.push(`           ${f.message}`);
     if (f.remediation) {
       lines.push(`           ${c.dim}→ ${f.remediation}${c.reset}`);

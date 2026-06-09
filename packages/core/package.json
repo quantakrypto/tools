@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "description": "Shared post-quantum readiness library: crypto detectors, vulnerable-dependency database, inventory + SARIF reporting. Zero runtime dependencies.",
   "license": "Apache-2.0",
+  "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
+  "homepage": "https://github.com/dandelionlabs-io/qproof-tools/tree/main/packages/core#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dandelionlabs-io/qproof-tools.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/dandelionlabs-io/qproof-tools/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,9 +22,17 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "src", "README.md"],
-  "engines": { "node": ">=20" },
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -b",
     "test": "node --import tsx --test test/*.test.ts"

@@ -64,20 +64,32 @@ test("KAT category SKIPS (and never fails) when no vectors are supplied", async 
 });
 
 test("mock with wrong-length ciphertext FAILS the sizes category", async () => {
-  const report = await run({ param: "ml-kem-768", iterations: 4, env: { MOCK_BREAK: "wrong-ct-size" } });
+  const report = await run({
+    param: "ml-kem-768",
+    iterations: 4,
+    env: { MOCK_BREAK: "wrong-ct-size" },
+  });
   assert.equal(cat(report, "sizes").status, "fail");
   assert.equal(report.overall, "FAIL");
 });
 
 test("mock with non-deterministic decaps FAILS the determinism category", async () => {
-  const report = await run({ param: "ml-kem-768", iterations: 4, env: { MOCK_BREAK: "nondeterministic-decaps" } });
+  const report = await run({
+    param: "ml-kem-768",
+    iterations: 4,
+    env: { MOCK_BREAK: "nondeterministic-decaps" },
+  });
   assert.equal(cat(report, "determinism").status, "fail");
   // Correctness may also fail because honest decaps no longer reproduces ss.
   assert.equal(report.overall, "FAIL");
 });
 
 test("mock that errors on corrupted ct FAILS implicit-rejection (AF-02)", async () => {
-  const report = await run({ param: "ml-kem-768", iterations: 4, env: { MOCK_BREAK: "reject-errors" } });
+  const report = await run({
+    param: "ml-kem-768",
+    iterations: 4,
+    env: { MOCK_BREAK: "reject-errors" },
+  });
   const ir = cat(report, "implicit-rejection");
   assert.equal(ir.status, "fail");
   assert.equal(ir.bugClass, "AF-02");
@@ -85,13 +97,21 @@ test("mock that errors on corrupted ct FAILS implicit-rejection (AF-02)", async 
 });
 
 test("mock that returns honest ss for corrupted ct FAILS implicit-rejection 'differs'", async () => {
-  const report = await run({ param: "ml-kem-768", iterations: 4, env: { MOCK_BREAK: "reject-honest" } });
+  const report = await run({
+    param: "ml-kem-768",
+    iterations: 4,
+    env: { MOCK_BREAK: "reject-honest" },
+  });
   assert.equal(cat(report, "implicit-rejection").status, "fail");
   assert.equal(report.overall, "FAIL");
 });
 
 test("wrong-ss-size mock FAILS sizes", async () => {
-  const report = await run({ param: "ml-kem-512", iterations: 2, env: { MOCK_BREAK: "wrong-ss-size" } });
+  const report = await run({
+    param: "ml-kem-512",
+    iterations: 2,
+    env: { MOCK_BREAK: "wrong-ss-size" },
+  });
   assert.equal(cat(report, "sizes").status, "fail");
 });
 
@@ -102,13 +122,23 @@ test("ML-DSA: well-behaved mock PASSES the dsa category", async () => {
 });
 
 test("ML-DSA: verify-always-true mock FAILS the dsa tamper checks", async () => {
-  const report = await run({ param: "ml-dsa-65", iterations: 6, only: ["dsa"], env: { MOCK_BREAK: "verify-always-true" } });
+  const report = await run({
+    param: "ml-dsa-65",
+    iterations: 6,
+    only: ["dsa"],
+    env: { MOCK_BREAK: "verify-always-true" },
+  });
   assert.equal(cat(report, "dsa").status, "fail");
   assert.equal(report.overall, "FAIL");
 });
 
 test("ML-DSA: wrong-sig-size mock FAILS the dsa size check", async () => {
-  const report = await run({ param: "ml-dsa-44", iterations: 4, only: ["dsa"], env: { MOCK_BREAK: "wrong-sig-size" } });
+  const report = await run({
+    param: "ml-dsa-44",
+    iterations: 4,
+    only: ["dsa"],
+    env: { MOCK_BREAK: "wrong-sig-size" },
+  });
   assert.equal(cat(report, "dsa").status, "fail");
 });
 

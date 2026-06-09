@@ -8,13 +8,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
-import type {
-  CryptoInventory,
-  Finding,
-  ScanOptions,
-  ScanResult,
-  Severity,
-} from "@qproof/core";
+import type { CryptoInventory, Finding, ScanOptions, ScanResult, Severity } from "@qproof/core";
 
 /** Build a Finding with sensible defaults; override any field. */
 export function makeFinding(overrides: Partial<Finding> = {}): Finding {

@@ -4,7 +4,6 @@ description: >-
   with qScan, writes a SARIF report for GitHub code scanning, annotates
   findings inline, and (optionally) comments a summary on the pull request.
 author: "qproof"
-
 branding:
   icon: "shield"
   color: "green"

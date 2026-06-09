@@ -16,7 +16,9 @@ import { main } from "../src/cli.js";
 import { EXIT } from "../src/index.js";
 
 /** Capture stdout + stderr written during `fn`. */
-async function capture(fn: () => Promise<number>): Promise<{ code: number; out: string; err: string }> {
+async function capture(
+  fn: () => Promise<number>,
+): Promise<{ code: number; out: string; err: string }> {
   const origOut = process.stdout.write.bind(process.stdout);
   const origErr = process.stderr.write.bind(process.stderr);
   let out = "";
@@ -66,9 +68,7 @@ test("--write-baseline reports and exits 0 (json scanner unavailable is tolerate
   // EXIT.ERROR rather than crashing — exercising the catch path.
   const dir = await mkdtemp(join(tmpdir(), "qscan-cli-"));
   try {
-    const { code, err } = await capture(() =>
-      main([dir, "--write-baseline", join(dir, "b.json")]),
-    );
+    const { code, err } = await capture(() => main([dir, "--write-baseline", join(dir, "b.json")]));
     // Core scan is a stub → ERROR; the important thing is no unhandled throw.
     assert.ok(code === EXIT.OK || code === EXIT.ERROR);
     if (code === EXIT.ERROR) assert.match(err, /qscan:/);

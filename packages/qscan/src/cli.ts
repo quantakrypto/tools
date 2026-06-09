@@ -90,9 +90,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   if (!options.quiet && run.suppressed.length > 0) {
-    process.stderr.write(
-      `qscan: suppressed ${run.suppressed.length} finding(s) via baseline\n`,
-    );
+    process.stderr.write(`qscan: suppressed ${run.suppressed.length} finding(s) via baseline\n`);
   }
 
   return run.exitCode;
@@ -100,8 +98,7 @@ export async function main(argv: readonly string[]): Promise<number> {
 
 // Only auto-run when invoked as a script (not when imported by a test).
 const invokedDirectly =
-  process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(process.argv[1]).href;
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (invokedDirectly) {
   main(process.argv.slice(2))

@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isParamSet, PARAM_SETS, sizesFor, asKemSizes, asDsaSizes, asSlhDsaSizes } from "../src/sizes.js";
+import {
+  isParamSet,
+  PARAM_SETS,
+  sizesFor,
+  asKemSizes,
+  asDsaSizes,
+  asSlhDsaSizes,
+} from "../src/sizes.js";
 
 test("PARAM_SETS lists the ML-KEM, ML-DSA, and SLH-DSA standardized sets", () => {
   assert.deepEqual([...PARAM_SETS].sort(), [
@@ -56,9 +63,18 @@ test("ML-DSA sizes match FIPS 204 Table 2", () => {
   const d65 = asDsaSizes(sizesFor("ml-dsa-65"));
   const d87 = asDsaSizes(sizesFor("ml-dsa-87"));
   assert.ok(d44 && d65 && d87);
-  assert.deepEqual({ pk: d44!.publicKey, sk: d44!.secretKey, sig: d44!.signature }, { pk: 1312, sk: 2560, sig: 2420 });
-  assert.deepEqual({ pk: d65!.publicKey, sk: d65!.secretKey, sig: d65!.signature }, { pk: 1952, sk: 4032, sig: 3309 });
-  assert.deepEqual({ pk: d87!.publicKey, sk: d87!.secretKey, sig: d87!.signature }, { pk: 2592, sk: 4896, sig: 4627 });
+  assert.deepEqual(
+    { pk: d44!.publicKey, sk: d44!.secretKey, sig: d44!.signature },
+    { pk: 1312, sk: 2560, sig: 2420 },
+  );
+  assert.deepEqual(
+    { pk: d65!.publicKey, sk: d65!.secretKey, sig: d65!.signature },
+    { pk: 1952, sk: 4032, sig: 3309 },
+  );
+  assert.deepEqual(
+    { pk: d87!.publicKey, sk: d87!.secretKey, sig: d87!.signature },
+    { pk: 2592, sk: 4896, sig: 4627 },
+  );
 });
 
 test("SLH-DSA sizes match FIPS 205 Table 2 (pk=2n, sk=4n, sig per set)", () => {

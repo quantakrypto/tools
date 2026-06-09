@@ -1,0 +1,19 @@
+# Build output & deps
+dist/
+**/dist/
+node_modules/
+coverage/
+
+# Generated type declarations
+**/*.d.ts
+
+# Lockfile (npm owns its formatting)
+package-lock.json
+
+# Markdown is prose-formatted by hand; don't reflow it.
+*.md
+**/*.md
+
+# REUSE / licensing data
+LICENSES/
+REUSE.toml

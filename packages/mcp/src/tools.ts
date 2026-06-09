@@ -8,13 +8,7 @@
  * protocol-level crash. When core lands, the tools work unchanged.
  */
 
-import {
-  VERSION,
-  buildInventory,
-  detectors,
-  remediationFor,
-  scan,
-} from "@qproof/core";
+import { VERSION, buildInventory, detectors, remediationFor, scan, toCbom } from "@qproof/core";
 import type {
   AlgorithmFamily,
   CryptoInventory,
@@ -25,6 +19,7 @@ import type {
 
 import { errorResult, textResult } from "./protocol.js";
 import type { JsonSchema, ToolDefinition, ToolResult } from "./protocol.js";
+import { resolveRule } from "./rules.js";
 
 /** Severity order for stable, human-friendly summaries. */
 const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info"];
@@ -60,7 +55,10 @@ async function safe<T>(
 
 /** Map a free-text algorithm string onto a known {@link AlgorithmFamily}. */
 function normalizeAlgorithm(input: string): AlgorithmFamily {
-  const cleaned = input.trim().toUpperCase().replace(/[\s_-]+/g, "");
+  const cleaned = input
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, "");
   for (const fam of ALGORITHM_FAMILIES) {
     if (fam.toUpperCase() === cleaned) return fam;
   }
@@ -101,10 +99,7 @@ function summarizeScan(result: ScanResult): string {
     lines.push("");
     lines.push("Top findings:");
     const top = [...result.findings]
-      .sort(
-        (a, b) =>
-          SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
-      )
+      .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
       .slice(0, 20);
     for (const f of top) {
       const loc = `${f.location.file}:${f.location.line}`;
@@ -221,7 +216,9 @@ const explainFindingTool: ToolDefinition = {
   name: "explain_finding",
   description:
     "Explain a qproof finding and its post-quantum remediation. Provide a " +
-    "ruleId (e.g. 'rsa-keygen') and/or an algorithm (e.g. 'RSA', 'ECDSA').",
+    "ruleId (e.g. 'forge-rsa-keygen', 'elliptic-ec', 'node-rsa', 'pem-ec-private-key') " +
+    "and/or an algorithm (e.g. 'RSA', 'ECDSA'). The ruleId is resolved against the " +
+    "core detector set, so library and config rules explain correctly.",
   inputSchema: {
     type: "object",
     properties: {
@@ -245,25 +242,30 @@ const explainFindingTool: ToolDefinition = {
 
     const lines: string[] = [];
 
+    // Resolve the rule against core's actual detector set/registry (P0-5),
+    // not by a fragile id-prefix match. Library rules (forge-*, elliptic-ec,
+    // node-rsa, …) resolve to their `crypto-libs` detector and carry their
+    // algorithm, so they now explain correctly.
+    let resolvedAlgorithm: AlgorithmFamily | undefined;
     if (ruleId) {
-      // Match a detector whose id prefixes (or equals) the rule id.
-      const detectorList = await safe("detectors", () => detectors);
-      if (detectorList.ok) {
-        const match = detectorList.value.find(
-          (d) => ruleId === d.id || ruleId.startsWith(`${d.id}-`) || ruleId.startsWith(d.id),
+      const resolved = resolveRule(ruleId);
+      resolvedAlgorithm = resolved.algorithm;
+      lines.push(`Rule: ${ruleId}`);
+      if (resolved.detector) {
+        lines.push(`Detector: ${resolved.detector.id} — ${resolved.detector.description}`);
+      } else if (resolved.via === "unresolved") {
+        lines.push(
+          "No matching detector found in the catalog (rule may be unknown to this core version).",
         );
-        lines.push(`Rule: ${ruleId}`);
-        if (match) {
-          lines.push(`Detector: ${match.id} — ${match.description}`);
-        } else {
-          lines.push("No matching detector found in the catalog (rule may be a dependency or config rule).");
-        }
       }
     }
 
+    // Prefer an explicit algorithm; otherwise use the one the rule resolved to.
     const algorithm: AlgorithmFamily | undefined = algoInput
       ? normalizeAlgorithm(algoInput)
-      : undefined;
+      : resolvedAlgorithm && resolvedAlgorithm !== "unknown"
+        ? resolvedAlgorithm
+        : undefined;
 
     if (algorithm) {
       if (lines.length) lines.push("");
@@ -272,7 +274,9 @@ const explainFindingTool: ToolDefinition = {
         remediationFor(algorithm),
       );
       if (rem.ok && rem.value) {
-        lines.push(`Why it matters: ${algorithm} relies on hardness assumptions (integer factorization / discrete log) that Shor's algorithm breaks on a cryptographically-relevant quantum computer.`);
+        lines.push(
+          `Why it matters: ${algorithm} relies on hardness assumptions (integer factorization / discrete log) that Shor's algorithm breaks on a cryptographically-relevant quantum computer.`,
+        );
         lines.push(`Recommendation: ${rem.value.recommendation}`);
         lines.push(`Detail: ${rem.value.detail}`);
       } else if (rem.ok) {
@@ -372,8 +376,7 @@ function staticHybridAdvice(algorithm: AlgorithmFamily): string[] {
 
 const listRulesTool: ToolDefinition = {
   name: "list_rules",
-  description:
-    "List the qproof detector catalog: every detector id and what it looks for.",
+  description: "List the qproof detector catalog: every detector id and what it looks for.",
   inputSchema: {
     type: "object",
     properties: {},
@@ -384,9 +387,7 @@ const listRulesTool: ToolDefinition = {
     if (!detectorList.ok) return detectorList.result;
     const catalog = detectorList.value.map((d) => ({ id: d.id, description: d.description }));
     if (catalog.length === 0) {
-      return textResult(
-        "No detectors are registered in @qproof/core yet (the catalog is empty).",
-      );
+      return textResult("No detectors are registered in @qproof/core yet (the catalog is empty).");
     }
     const human = catalog.map((d) => `- ${d.id}: ${d.description}`).join("\n");
     return {
@@ -398,6 +399,44 @@ const listRulesTool: ToolDefinition = {
   },
 };
 
+const generateCbomTool: ToolDefinition = {
+  name: "generate_cbom",
+  description:
+    "Scan a path and emit a CycloneDX 1.6 Cryptographic Bill of Materials (CBOM) " +
+    "of the classical cryptographic assets found, for compliance / supply-chain " +
+    "tooling. Reads the filesystem, so it is gated like scan_path over HTTP.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      path: {
+        type: "string",
+        description: "Absolute or relative path to a file or directory to inventory.",
+      },
+    },
+    required: ["path"],
+    additionalProperties: false,
+  },
+  async handler(args): Promise<ToolResult> {
+    const path = args.path;
+    if (typeof path !== "string" || path.length === 0) {
+      return errorResult("generate_cbom requires a non-empty 'path' string.");
+    }
+    const scanned = await safe("scan", () => scan({ root: path }));
+    if (!scanned.ok) return scanned.result;
+    const cbom = await safe("toCbom", () => toCbom(scanned.value));
+    if (!cbom.ok) return cbom.result;
+    return textResult(JSON.stringify(cbom.value, null, 2));
+  },
+};
+
+/**
+ * Tools that read arbitrary filesystem paths. Disabled by default on the HTTP
+ * transport (see {@link ./http.ts}) because a hosted endpoint must not be an
+ * arbitrary-file-read oracle (security audit Q-01). The stdio transport, which
+ * trusts the local user, always exposes them.
+ */
+export const FS_TOOL_NAMES: readonly string[] = ["scan_path", "inventory_crypto", "generate_cbom"];
+
 /** All qproof MCP tools, in a stable order. */
 export const qproofTools: ToolDefinition[] = [
   scanPathTool,
@@ -405,6 +444,7 @@ export const qproofTools: ToolDefinition[] = [
   explainFindingTool,
   suggestHybridTool,
   listRulesTool,
+  generateCbomTool,
 ];
 
 /** The core version these tools are built against (re-exported for diagnostics). */

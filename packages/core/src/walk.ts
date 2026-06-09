@@ -31,20 +31,69 @@ export const DEFAULT_MAX_FILE_SIZE = 2 * 1024 * 1024;
  */
 const BINARY_EXTENSIONS = new Set<string>([
   // images
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".tiff", ".avif",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".ico",
+  ".tiff",
+  ".avif",
   // fonts
-  ".woff", ".woff2", ".ttf", ".otf", ".eot",
+  ".woff",
+  ".woff2",
+  ".ttf",
+  ".otf",
+  ".eot",
   // archives / compressed
-  ".zip", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".tar",
+  ".zip",
+  ".gz",
+  ".tgz",
+  ".bz2",
+  ".xz",
+  ".7z",
+  ".rar",
+  ".tar",
   // media
-  ".mp3", ".mp4", ".mov", ".avi", ".mkv", ".wav", ".flac", ".ogg", ".webm",
+  ".mp3",
+  ".mp4",
+  ".mov",
+  ".avi",
+  ".mkv",
+  ".wav",
+  ".flac",
+  ".ogg",
+  ".webm",
   // documents / binaries
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-  ".exe", ".dll", ".so", ".dylib", ".bin", ".o", ".a", ".class", ".wasm",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".exe",
+  ".dll",
+  ".so",
+  ".dylib",
+  ".bin",
+  ".o",
+  ".a",
+  ".class",
+  ".wasm",
   // data blobs / db
-  ".db", ".sqlite", ".sqlite3", ".dat", ".pack", ".idx",
+  ".db",
+  ".sqlite",
+  ".sqlite3",
+  ".dat",
+  ".pack",
+  ".idx",
   // misc
-  ".lock", ".map", ".min.js", ".node",
+  ".lock",
+  ".map",
+  ".min.js",
+  ".node",
 ]);
 
 /** Options accepted by {@link walkFiles}. */
@@ -146,10 +195,7 @@ export function looksMinified(content: string): boolean {
  * directory. If `root` points at a single file, yields just that file's
  * basename (subject to the size / binary filters).
  */
-export async function* walkFiles(
-  root: string,
-  options: WalkOptions = {},
-): AsyncGenerator<string> {
+export async function* walkFiles(root: string, options: WalkOptions = {}): AsyncGenerator<string> {
   const include = options.include ?? [];
   const exclude = options.exclude ?? [];
   const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
@@ -197,11 +243,7 @@ function isManifestPath(rel: string): boolean {
 }
 
 /** Internal recursive directory walker. `relDir` is POSIX-relative to the root. */
-async function* walkDir(
-  absDir: string,
-  relDir: string,
-  ctx: WalkContext,
-): AsyncGenerator<string> {
+async function* walkDir(absDir: string, relDir: string, ctx: WalkContext): AsyncGenerator<string> {
   let entries: Dirent[];
   try {
     entries = await readdir(absDir, { withFileTypes: true });

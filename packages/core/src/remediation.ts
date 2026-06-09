@@ -168,9 +168,6 @@ export const STATEFUL_HBS_NOTE =
 export function statefulHbsApplies(algorithm: AlgorithmFamily): boolean {
   // Signature families only — LMS/XMSS are signatures, not KEMs.
   return (
-    algorithm === "RSA" ||
-    algorithm === "ECDSA" ||
-    algorithm === "EdDSA" ||
-    algorithm === "DSA"
+    algorithm === "RSA" || algorithm === "ECDSA" || algorithm === "EdDSA" || algorithm === "DSA"
   );
 }

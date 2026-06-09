@@ -28,6 +28,41 @@ jobs:
       - name: Test (node:test across all packages)
         run: npm test
 
+  lint:
+    name: lint + format (node 20)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      # ESLint's type-aware rules (no-floating-promises etc.) need the project
+      # built so the TS program resolves the cross-package references.
+      - name: Build (for type-aware lint)
+        run: npm run build
+      - name: Lint (eslint flat config)
+        run: npm run lint
+      - name: Format check (prettier)
+        run: npm run format:check
+
+  coverage:
+    name: coverage (node 20, advisory)
+    runs-on: ubuntu-latest
+    # Non-gating: Node's --experimental-test-coverage is informational for now.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Test with coverage (node built-in)
+        run: npm run test:coverage
+
   dogfood:
     name: qScan self-scan (dogfood)
     runs-on: ubuntu-latest

@@ -27,11 +27,7 @@ import {
   makeFinding,
   nearSortedCall,
 } from "../detect-utils.js";
-import {
-  CWE_BROKEN_CRYPTO,
-  CWE_CERT_VALIDATION,
-  CWE_WEAK_STRENGTH,
-} from "../cwe.js";
+import { CWE_BROKEN_CRYPTO, CWE_CERT_VALIDATION, CWE_WEAK_STRENGTH } from "../cwe.js";
 
 /* -------------------------------------------------------------------------- */
 /* Precompiled regexes (module scope — never recreated per file)              */
@@ -43,7 +39,8 @@ const RE_CREATE_SIGN_VERIFY = /create(?:Sign|Verify)\s*\(/g;
 // One-shot crypto.sign/verify(algorithm, data, key). Anchored so it doesn't
 // fire inside identifiers like `assign(` or `createSign(` (which the dedicated
 // createSign/createVerify rule handles).
-const RE_ONESHOT_SIGN_VERIFY = /(?:^|[^.\w])(?:crypto\.)?(sign|verify)\s*\(\s*['"`][\w.-]+['"`]\s*,/g;
+const RE_ONESHOT_SIGN_VERIFY =
+  /(?:^|[^.\w])(?:crypto\.)?(sign|verify)\s*\(\s*['"`][\w.-]+['"`]\s*,/g;
 const RE_CREATE_DH = /createDiffieHellman(?:Group)?\s*\(/g;
 const RE_GET_DH = /getDiffieHellman\s*\(\s*['"`](modp\d+)['"`]\s*\)/g;
 const RE_CREATE_ECDH = /createECDH\s*\(/g;
@@ -67,8 +64,7 @@ const RE_SECP256K1 =
   /\b(?:secp(?:256k1)?|secp)\s*\.\s*(?:sign|verify|getPublicKey|getSharedSecret|ecdh|recoverPublicKey)\s*\(/g;
 
 // JWT/JOSE.
-const RE_JWT_ALG =
-  /['"`](RS(?:256|384|512)|PS(?:256|384|512)|ES(?:256|384|512|256K)|EdDSA)['"`]/g;
+const RE_JWT_ALG = /['"`](RS(?:256|384|512)|PS(?:256|384|512)|ES(?:256|384|512|256K)|EdDSA)['"`]/g;
 // JOSE ECDH-ES key agreement (HNDL) and COSE algorithm identifiers.
 const RE_JOSE_ECDH = /['"`](ECDH-ES(?:\+A(?:128|192|256)KW)?)['"`]/g;
 
@@ -153,7 +149,8 @@ const nodeCryptoDetector: Detector = {
           hndl: info.hndl,
           cwe: CWE_BROKEN_CRYPTO,
           message:
-            info.message ?? `Generates a classical ${info.label} key pair, which is not quantum-safe.`,
+            info.message ??
+            `Generates a classical ${info.label} key pair, which is not quantum-safe.`,
           ...(info.remediation ? { remediation: info.remediation } : {}),
         },
         m,
@@ -212,7 +209,8 @@ const nodeCryptoDetector: Detector = {
           algorithm: "DH",
           hndl: true,
           cwe: CWE_BROKEN_CRYPTO,
-          message: "Finite-field Diffie-Hellman is broken by Shor's algorithm (harvest-now-decrypt-later).",
+          message:
+            "Finite-field Diffie-Hellman is broken by Shor's algorithm (harvest-now-decrypt-later).",
         },
         m,
       );
@@ -248,7 +246,8 @@ const nodeCryptoDetector: Detector = {
           algorithm: "ECDH",
           hndl: true,
           cwe: CWE_BROKEN_CRYPTO,
-          message: "Elliptic-curve Diffie-Hellman is broken by Shor's algorithm (harvest-now-decrypt-later).",
+          message:
+            "Elliptic-curve Diffie-Hellman is broken by Shor's algorithm (harvest-now-decrypt-later).",
         },
         m,
       );
@@ -285,7 +284,8 @@ const nodeCryptoDetector: Detector = {
           algorithm: "ECDH",
           hndl: true,
           cwe: CWE_BROKEN_CRYPTO,
-          message: "crypto.diffieHellman() performs a classical (EC)DH agreement (harvest-now-decrypt-later).",
+          message:
+            "crypto.diffieHellman() performs a classical (EC)DH agreement (harvest-now-decrypt-later).",
         },
         m,
       );
@@ -325,13 +325,12 @@ const webCryptoDetector: Detector = {
       const name = m[1].toUpperCase();
       const isKem = name === "RSA-OAEP";
       const isEcdh = name === "ECDH";
-      const algorithm: Finding["algorithm"] =
-        name.startsWith("RSA") ? "RSA" : isEcdh ? "ECDH" : "ECDSA";
-      const category: Finding["category"] = isEcdh
-        ? "key-exchange"
-        : isKem
-          ? "kem"
-          : "signature";
+      const algorithm: Finding["algorithm"] = name.startsWith("RSA")
+        ? "RSA"
+        : isEcdh
+          ? "ECDH"
+          : "ECDSA";
+      const category: Finding["category"] = isEcdh ? "key-exchange" : isKem ? "kem" : "signature";
       const hndl = isKem || isEcdh;
       findings.push(
         makeFinding({
@@ -456,7 +455,8 @@ const libraryDetector: Detector = {
       algorithm: "unknown",
       hndl: false,
       cwe: CWE_BROKEN_CRYPTO,
-      message: "jsrsasign signing uses classical RSA/ECDSA signatures, forgeable by a quantum attacker.",
+      message:
+        "jsrsasign signing uses classical RSA/ECDSA signatures, forgeable by a quantum attacker.",
       remediation: "ML-DSA-65 (FIPS 204)",
     });
 
@@ -535,7 +535,8 @@ const jwtDetector: Detector = {
           hndl: true,
           cwe: CWE_BROKEN_CRYPTO,
           message: `JOSE "${m[1]}" performs classical ECDH key agreement — harvest-now-decrypt-later exposed.`,
-          remediation: "Track IETF PQC JOSE/COSE; adopt hybrid X25519MLKEM768 KEM-based encryption.",
+          remediation:
+            "Track IETF PQC JOSE/COSE; adopt hybrid X25519MLKEM768 KEM-based encryption.",
           file,
           content,
           index: m.index,
@@ -638,8 +639,7 @@ const tlsDetector: Detector = {
 /* SSH public keys + TLS certificate signature algorithms (config scope)       */
 /* -------------------------------------------------------------------------- */
 
-const RE_SSH_PUBKEY =
-  /\b(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\b/g;
+const RE_SSH_PUBKEY = /\b(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\b/g;
 const RE_CERT_SIG_ALG =
   /\b(sha(?:1|256|384|512)WithRSAEncryption|ecdsa-with-SHA(?:1|256|384|512)|rsassaPss|dsaWithSHA(?:1|256))\b/g;
 
@@ -679,7 +679,8 @@ const sshCertDetector: Detector = {
           hndl: false,
           cwe: CWE_BROKEN_CRYPTO,
           message: `SSH public key type "${tok}" is a classical key forgeable by a quantum attacker.`,
-          remediation: "Plan migration to PQC-capable SSH (e.g. sntrup761x25519 KEX, PQC host keys).",
+          remediation:
+            "Plan migration to PQC-capable SSH (e.g. sntrup761x25519 KEX, PQC host keys).",
           file,
           content,
           index: m.index,
@@ -707,7 +708,8 @@ const sshCertDetector: Detector = {
           hndl: false,
           cwe: CWE_BROKEN_CRYPTO,
           message: `Certificate signature algorithm "${tok}" is classical (RSA/ECDSA/DSA) — a quantum forgery surface.`,
-          remediation: "Plan re-issuance with PQC-capable CAs as ML-DSA certificate profiles mature.",
+          remediation:
+            "Plan re-issuance with PQC-capable CAs as ML-DSA certificate profiles mature.",
           file,
           content,
           index: m.index,

@@ -1,21 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 
-import type { Finding, ScanResult, Severity } from "@qproof/core";
+import { applyBaseline, fingerprintFinding } from "@qproof/core";
+import type { Baseline, Finding, ScanResult } from "@qproof/core";
 
-import {
-  applyBaseline,
-  buildSummary,
-  fingerprint,
-  fingerprintsFromReport,
-  meetsThreshold,
-  readInputs,
-  renderReport,
-  shouldFail,
-} from "../src/main.js";
+import { buildSummary, fingerprint, meetsThreshold, readInputs, shouldFail } from "../src/main.js";
 
 /** Build a Finding with sensible defaults for tests. */
 function makeFinding(over: Partial<Finding> = {}): Finding {
@@ -52,6 +41,11 @@ function makeResult(findings: Finding[], readinessScore = 75): ScanResult {
     finishedAt: "2026-01-01T00:00:01.000Z",
     toolVersion: "0.1.0",
   };
+}
+
+/** Wrap a set of fingerprints in the shared core baseline shape. */
+function baselineOf(...fingerprints: string[]): Baseline {
+  return { version: 1, fingerprints };
 }
 
 test("readInputs applies defaults when env is empty", () => {
@@ -109,50 +103,38 @@ test("shouldFail gates on blocking count and fail-on-findings", () => {
   assert.equal(shouldFail(5, false), false);
 });
 
-test("applyBaseline suppresses findings present in the baseline", () => {
-  const a = makeFinding({ ruleId: "rsa-keygen", message: "old" });
-  const b = makeFinding({ ruleId: "ecdh-usage", message: "new", location: { file: "x.ts", line: 1 } });
-  const baseline = new Set<string>([fingerprint(a)]);
-  const result = applyBaseline([a, b], baseline);
-  assert.equal(result.length, 1);
-  assert.equal(result[0]?.ruleId, "ecdh-usage");
+test("fingerprint is the shared @qproof/core fingerprint", () => {
+  // The Action re-exports core's fingerprint so it and the CLI share one
+  // baseline format.
+  assert.equal(fingerprint, fingerprintFinding);
 });
 
-test("applyBaseline is a no-op when the baseline is empty", () => {
+test("applyBaseline (shared) suppresses findings present in the baseline", () => {
+  const a = makeFinding({ ruleId: "rsa-keygen" });
+  const b = makeFinding({
+    ruleId: "ecdh-usage",
+    message: "new",
+    location: { file: "x.ts", line: 1 },
+  });
+  const baseline = baselineOf(fingerprint(a));
+  const { newFindings, suppressed } = applyBaseline([a, b], baseline);
+  assert.equal(newFindings.length, 1);
+  assert.equal(newFindings[0]?.ruleId, "ecdh-usage");
+  assert.equal(suppressed.length, 1);
+  assert.equal(suppressed[0]?.ruleId, "rsa-keygen");
+});
+
+test("applyBaseline (shared) is a no-op when the baseline is empty", () => {
   const a = makeFinding();
-  assert.deepEqual(applyBaseline([a], new Set()), [a]);
+  const { newFindings, suppressed } = applyBaseline([a], baselineOf());
+  assert.deepEqual(newFindings, [a]);
+  assert.equal(suppressed.length, 0);
 });
 
 test("fingerprint ignores line number so shifted findings still match", () => {
   const a = makeFinding({ location: { file: "src/crypto.ts", line: 10 } });
   const b = makeFinding({ location: { file: "src/crypto.ts", line: 42 } });
   assert.equal(fingerprint(a), fingerprint(b));
-});
-
-test("fingerprintsFromReport reads JSON-report findings", () => {
-  const a = makeFinding();
-  const set = fingerprintsFromReport({ findings: [a] });
-  assert.equal(set.has(fingerprint(a)), true);
-});
-
-test("fingerprintsFromReport reads SARIF results", () => {
-  const sarif = {
-    runs: [
-      {
-        results: [
-          {
-            ruleId: "rsa-keygen",
-            message: { text: "RSA-2048 key generation detected" },
-            locations: [
-              { physicalLocation: { artifactLocation: { uri: "src/crypto.ts" } } },
-            ],
-          },
-        ],
-      },
-    ],
-  };
-  const set = fingerprintsFromReport(sarif);
-  assert.equal(set.has(fingerprint(makeFinding())), true);
 });
 
 test("buildSummary reports a clean run when nothing blocks", () => {
@@ -167,37 +149,79 @@ test("buildSummary tabulates blocking findings", () => {
   assert.match(md, /\| high \| `rsa-keygen` \| src\/crypto\.ts:10 \|/);
 });
 
-test("renderReport(json) is parseable and pretty-printed", () => {
-  const json = renderReport(makeResult([makeFinding()]), "json");
-  const parsed = JSON.parse(json) as unknown;
-  assert.equal(typeof parsed, "object");
-  assert.match(json, /\n {2}/); // 2-space pretty-print
+// ---------------------------------------------------------------------------
+// P0-2: output-injection defenses in the PR-comment Markdown table.
+// Finding `file`/`message`/`ruleId` are attacker-controlled in a fork PR.
+// ---------------------------------------------------------------------------
+
+test("buildSummary: a hostile filename with a pipe cannot break the table", () => {
+  const f = makeFinding({
+    location: { file: "evil|name.ts", line: 1 },
+    message: "msg",
+  });
+  const md = buildSummary(makeResult([f]), [f], "high");
+  const row = md.split("\n").find((l) => l.includes("evil"));
+  assert.ok(row, "expected a row containing the hostile filename");
+  // The cell-internal pipe is escaped, so the row still has exactly the 4
+  // columns' worth of UNescaped pipes (5 delimiters for 4 cells).
+  const unescapedPipes = (row.match(/(?<!\\)\|/g) ?? []).length;
+  assert.equal(unescapedPipes, 5);
+  assert.match(row, /evil\\\|name\.ts/);
 });
 
-test("a SARIF report round-trips through fingerprintsFromReport", () => {
-  // Simulate a previously-written SARIF report on disk and confirm the baseline
-  // loader can read it back. (Independent of core's toSarif stub.)
-  const dir = mkdtempSync(join(tmpdir(), "qproof-sarif-"));
-  const file = join(dir, "qproof.sarif.json");
-  const sarif = {
-    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
-    version: "2.1.0",
-    runs: [
-      {
-        results: [
-          {
-            ruleId: "rsa-keygen",
-            message: { text: "RSA-2048 key generation detected" },
-            locations: [{ physicalLocation: { artifactLocation: { uri: "src/crypto.ts" } } }],
-          },
-        ],
-      },
-    ],
-  };
-  writeFileSync(file, JSON.stringify(sarif, null, 2), "utf8");
-  const onDisk = JSON.parse(readFileSync(file, "utf8"));
-  const set = fingerprintsFromReport(onDisk);
-  const threshold: Severity = "high";
-  assert.equal(meetsThreshold("high", threshold), true);
-  assert.equal(set.has(fingerprint(makeFinding())), true);
+test("buildSummary: backticks in finding text are escaped (no code-span breakout)", () => {
+  const f = makeFinding({
+    ruleId: "r`id",
+    message: "see `secret` and `more`",
+    location: { file: "a`b.ts", line: 2 },
+  });
+  const md = buildSummary(makeResult([f]), [f], "high");
+  const row = md.split("\n").find((l) => l.includes("a\\`b.ts"));
+  assert.ok(row, "expected the file cell with an escaped backtick");
+  // No bare backticks survive except the two we add around the (escaped) ruleId.
+  assert.match(row, /\\`secret\\`/);
+  assert.match(row, /r\\`id/);
+});
+
+test("buildSummary: HTML in a filename is entity-encoded (no HTML injection)", () => {
+  const f = makeFinding({
+    location: { file: '<img src=x onerror="alert(1)">.ts', line: 3 },
+    message: "<b>bold</b> & <script>evil</script>",
+  });
+  const md = buildSummary(makeResult([f]), [f], "high");
+  assert.doesNotMatch(md, /<img/);
+  assert.doesNotMatch(md, /<script>/);
+  assert.doesNotMatch(md, /<b>/);
+  assert.match(md, /&lt;img/);
+  assert.match(md, /&lt;script&gt;/);
+  assert.match(md, /&amp;/);
+});
+
+test("buildSummary: newlines and ']' in finding text cannot add rows or break out", () => {
+  const f = makeFinding({
+    message: "line1\nline2\r\n| injected | row |",
+    location: { file: "weird]name::x.ts", line: 4 },
+  });
+  const md = buildSummary(makeResult([f]), [f], "high");
+  // The injected "| injected | row |" must remain inside one cell: the table
+  // body has exactly one data row plus the header + divider.
+  const dataRows = md
+    .split("\n")
+    .filter((l) => l.startsWith("|") && !/^\| ---/.test(l) && !/^\| Severity/.test(l));
+  assert.equal(dataRows.length, 1);
+  // The newline was flattened to a space inside the single cell.
+  assert.doesNotMatch(dataRows[0] ?? "", /\n/);
+  assert.match(dataRows[0] ?? "", /line1 line2/);
+});
+
+test("buildSummary: a backslash before a pipe cannot un-escape the delimiter", () => {
+  // Naive `replace(/\|/, "\\|")` is defeated by a trailing backslash:
+  // "x\" + "|" would render as an escaped-backslash then a LIVE pipe. mdCell
+  // doubles backslashes first, so the pipe stays escaped.
+  const f = makeFinding({ message: "x\\| y | z", location: { file: "f.ts", line: 1 } });
+  const md = buildSummary(makeResult([f]), [f], "high");
+  const row = md.split("\n").find((l) => l.includes("f.ts"));
+  assert.ok(row);
+  const unescapedPipes = (row.match(/(?<!\\)\|/g) ?? []).length;
+  assert.equal(unescapedPipes, 5);
 });

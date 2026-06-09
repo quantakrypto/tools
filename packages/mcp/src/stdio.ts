@@ -46,9 +46,7 @@ export function runStdioServer(
       parsed = JSON.parse(line);
     } catch {
       // Parse error: we have no id, so reply with a null-id error per JSON-RPC.
-      output.write(
-        JSON.stringify(makeFailure(null, ErrorCode.ParseError, "parse error")) + "\n",
-      );
+      output.write(JSON.stringify(makeFailure(null, ErrorCode.ParseError, "parse error")) + "\n");
       return;
     }
 

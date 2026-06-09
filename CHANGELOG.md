@@ -6,7 +6,43 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from 1.0.0.
 
 ## [Unreleased]
 
-Planned work is tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Implements the full P0/P1/P2 roadmap (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+Build clean; **307 tests pass**; ESLint + Prettier clean; still zero runtime
+dependencies.
+
+### Added
+
+- **core:** shared canonical baseline (`fingerprintFinding`/`applyBaseline`/…);
+  `DetectorRegistry` + `Detector.scope`/`language`; wired `ScanOptions`
+  (`include`/`files`/`scanMinified`); new detectors (DH MODP, SSH keys, TLS
+  certificate signature algorithms, JOSE `ECDH-ES*`, one-shot `sign`/`verify`,
+  `secp256k1`); CWE tags on findings; CycloneDX **CBOM** export (`toCbom`);
+  `scanParallel` worker pool; `changedFiles` incremental helper; CNSA 2.0
+  Category-5 + SP 800-208 remediation guidance.
+- **qscan:** `--include`, `--max-file-size`, `--no-default-ignores`,
+  `--scan-minified`, `--changed`/`--since` (incremental), `--parallel`/
+  `--concurrency`, and `--cbom` output.
+- **mcp:** safe-by-default HTTP transport (loopback bind, `QPROOF_MCP_TOKEN`
+  auth, filesystem tools gated behind `QPROOF_MCP_ALLOW_FS`, per-request
+  timeout + response cap); `generate_cbom` tool.
+- **sieve:** SLH-DSA (FIPS 205); FIPS 203 §7.2 encapsulation-key modulus-range
+  check; deeper ML-DSA + deterministic/hedged signing probe; bounded pipelining.
+- **repo:** ESLint + Prettier, `test:coverage`, a benchmark harness, OpenSSF
+  Scorecard + release workflows, `REUSE.toml`, threat model, ADRs, SemVer
+  policy, config spec, and ISO 27001 A.8.24 / ACVP-provenance designs.
+
+### Fixed (security & correctness)
+
+- EC key generation is now classified as key-exchange-capable (harvest-now
+  exposure was under-reported). [P0-4]
+- PR-comment Markdown and `::error::` workflow-command output are escaped against
+  injection from attacker-controlled finding text. [P0-2]
+- The Sieve runner spawns the SUT with a scrubbed minimal environment. [P0-3]
+- `explain_finding` resolves library-rule findings (was "no matching detector"). [P0-5]
+- Hardened the TLS cipher regex (ReDoS) and replaced the quadratic proximity
+  scan with a binary search. [P0-6]
+- The GitHub Action now reuses qScan's `runQscan` and the shared baseline instead
+  of a divergent second implementation. [P1-3]
 
 ## [0.1.0] — 2026-06-03
 

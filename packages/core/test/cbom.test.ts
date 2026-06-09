@@ -44,7 +44,10 @@ test("toCbom emits a CycloneDX 1.6 cryptographic BOM", () => {
   const comp = bom.components[0];
   assert.equal(comp.type, "cryptographic-asset");
   assert.equal((comp.cryptoProperties as { quantumVulnerable: boolean }).quantumVulnerable, true);
-  assert.equal((comp.cryptoProperties as { harvestNowDecryptLater: boolean }).harvestNowDecryptLater, true);
+  assert.equal(
+    (comp.cryptoProperties as { harvestNowDecryptLater: boolean }).harvestNowDecryptLater,
+    true,
+  );
 });
 
 test("toCbom groups by algorithm + primitive and records occurrences", () => {
@@ -59,10 +62,16 @@ test("toCbom groups by algorithm + primitive and records occurrences", () => {
   assert.equal(bom.components.length, 2);
   const ecdh = bom.components.find((c) => c.name.startsWith("ECDH"))!;
   const occ = (ecdh.evidence as { occurrences: Array<{ location: string }> }).occurrences;
-  assert.deepEqual(occ.map((o) => o.location), ["src/a.ts:1", "src/b.ts:2"]);
+  assert.deepEqual(
+    occ.map((o) => o.location),
+    ["src/a.ts:1", "src/b.ts:2"],
+  );
 });
 
 test("toCbom is deterministic for the same result", () => {
-  const r = result([f({}), f({ ruleId: "x", category: "signature", algorithm: "ECDSA", hndl: false })]);
+  const r = result([
+    f({}),
+    f({ ruleId: "x", category: "signature", algorithm: "ECDSA", hndl: false }),
+  ]);
   assert.deepEqual(toCbom(r), toCbom(r));
 });

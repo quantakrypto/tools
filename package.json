@@ -6,9 +6,13 @@
   "description": "Open-source post-quantum readiness tooling by qproof — scanner, MCP server, conformance battery, and CI action.",
   "license": "Apache-2.0",
   "homepage": "https://qproof.com/tools",
+  "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dandelionlabs-io/qproof-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dandelionlabs-io/qproof-tools/issues"
   },
   "engines": {
     "node": ">=20"
@@ -21,11 +25,22 @@
     "clean": "tsc --build --clean",
     "typecheck": "tsc --build",
     "test": "npm run test --workspaces --if-present",
+    "//test:coverage": "Node built-in coverage (P1-8). Globbing packages/*/test/*.test.ts from the root works because node --test expands the glob itself; tsx is loaded via --import so the TS sources run directly. If a future Node makes root globbing flaky, fall back to: npm run test:coverage --workspaces --if-present with a per-package script.",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage \"packages/*/test/*.test.ts\"",
+    "bench": "node scripts/bench.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "qscan": "node --import tsx packages/qscan/src/cli.ts"
   },
   "devDependencies": {
+    "@eslint/js": "^9.18.0",
     "@types/node": "^22.10.2",
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.20.0"
   }
 }

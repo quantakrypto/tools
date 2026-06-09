@@ -8,12 +8,20 @@ import { test } from "node:test";
 import {
   ArgError,
   asFormat,
+  asInt,
   asSeverity,
   defaultOptions,
   meetsThreshold,
   parseArgs,
   severityRank,
 } from "../src/args.js";
+
+/** Narrow a parse result to its run options or fail the test. */
+function runOptions(args: string[]) {
+  const parsed = parseArgs(args);
+  if (parsed.kind !== "run") throw new Error("expected run");
+  return parsed.options;
+}
 
 test("defaults are applied when no args are given", () => {
   const parsed = parseArgs([]);
@@ -137,9 +145,76 @@ test("two positionals throw ArgError", () => {
 
 test("asFormat / asSeverity validate", () => {
   assert.equal(asFormat("human"), "human");
+  assert.equal(asFormat("cbom"), "cbom");
   assert.equal(asSeverity("low"), "low");
   assert.throws(() => asFormat("bogus"), ArgError);
   assert.throws(() => asSeverity("bogus"), ArgError);
+});
+
+test("new walk flags: --include (repeatable), --max-file-size, --no-default-ignores, --scan-minified", () => {
+  const o = runOptions([
+    "--include",
+    "src",
+    "--include=lib",
+    "--max-file-size",
+    "1048576",
+    "--no-default-ignores",
+    "--scan-minified",
+  ]);
+  assert.deepEqual(o.include, ["src", "lib"]);
+  assert.equal(o.maxFileSize, 1048576);
+  assert.equal(o.noDefaultIgnores, true);
+  assert.equal(o.scanMinified, true);
+});
+
+test("defaults for the new flags", () => {
+  const o = defaultOptions();
+  assert.deepEqual(o.include, []);
+  assert.equal(o.maxFileSize, undefined);
+  assert.equal(o.noDefaultIgnores, false);
+  assert.equal(o.scanMinified, false);
+  assert.equal(o.changed, false);
+  assert.equal(o.since, undefined);
+  assert.equal(o.parallel, false);
+  assert.equal(o.concurrency, undefined);
+});
+
+test("--changed and --since (the latter implies --changed)", () => {
+  const a = runOptions(["--changed"]);
+  assert.equal(a.changed, true);
+  assert.equal(a.since, undefined);
+
+  const b = runOptions(["--since", "origin/main"]);
+  assert.equal(b.changed, true, "--since implies incremental mode");
+  assert.equal(b.since, "origin/main");
+});
+
+test("--parallel and --concurrency (the latter implies --parallel)", () => {
+  const a = runOptions(["--parallel"]);
+  assert.equal(a.parallel, true);
+  assert.equal(a.concurrency, undefined);
+
+  const b = runOptions(["--concurrency", "4"]);
+  assert.equal(b.parallel, true, "--concurrency implies parallel");
+  assert.equal(b.concurrency, 4);
+});
+
+test("--cbom and --format cbom both select the cbom format", () => {
+  assert.equal(runOptions(["--cbom"]).format, "cbom");
+  assert.equal(runOptions(["--format", "cbom"]).format, "cbom");
+});
+
+test("asInt validates non-negative integers", () => {
+  assert.equal(asInt("0", "--x"), 0);
+  assert.equal(asInt("42", "--x"), 42);
+  assert.throws(() => asInt("-1", "--x"), ArgError);
+  assert.throws(() => asInt("1.5", "--x"), ArgError);
+  assert.throws(() => asInt("abc", "--x"), ArgError);
+});
+
+test("invalid integer flag values throw ArgError", () => {
+  assert.throws(() => parseArgs(["--max-file-size", "huge"]), ArgError);
+  assert.throws(() => parseArgs(["--concurrency", "-2"]), ArgError);
 });
 
 test("severityRank orders critical < info", () => {
