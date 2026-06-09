@@ -1,0 +1,65 @@
+name: "qproof — Quantum Readiness Scan"
+description: >-
+  Fail CI when new quantum-vulnerable cryptography lands. Scans your codebase
+  with qScan, writes a SARIF report for GitHub code scanning, annotates
+  findings inline, and (optionally) comments a summary on the pull request.
+author: "qproof"
+
+branding:
+  icon: "shield"
+  color: "green"
+
+inputs:
+  path:
+    description: "Directory (or file) to scan, relative to the repository root."
+    required: false
+    default: "."
+  severity-threshold:
+    description: >-
+      Minimum severity that counts as a failure: critical, high, medium, low,
+      or info. Findings strictly below this level never fail the build.
+    required: false
+    default: "high"
+  fail-on-findings:
+    description: >-
+      When "true", exit non-zero if any finding at or above the
+      severity-threshold is present. Set to "false" to report only.
+    required: false
+    default: "true"
+  format:
+    description: 'Report format written to "output". One of: sarif, json.'
+    required: false
+    default: "sarif"
+  output:
+    description: "Path of the report file to write (relative to the workspace)."
+    required: false
+    default: "qproof.sarif.json"
+  baseline:
+    description: >-
+      Optional path to a baseline file (a previously written qproof report).
+      Findings already present in the baseline are suppressed, so only NEW
+      quantum-vulnerable crypto fails the build.
+    required: false
+  comment-pr:
+    description: >-
+      When "true" and a github-token plus pull-request context are available,
+      post a summary comment on the pull request. Never fails the build.
+    required: false
+    default: "false"
+  github-token:
+    description: >-
+      Token used to comment on the pull request (only needed when
+      comment-pr is "true"). Typically ${{ github.token }}.
+    required: false
+
+outputs:
+  findings-count:
+    description: "Number of findings at or above the severity threshold (after baseline)."
+  sarif-file:
+    description: "Path of the report file that was written."
+  readiness-score:
+    description: "Post-quantum readiness score from 0 (worst) to 100 (no classical asymmetric crypto found)."
+
+runs:
+  using: "node20"
+  main: "dist/main.js"

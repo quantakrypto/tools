@@ -1,0 +1,26 @@
+{
+  "name": "@qproof/mcp",
+  "version": "0.1.0",
+  "description": "qproof MCP — post-quantum readiness for AI coding agents via the Model Context Protocol. Zero runtime dependencies (stdio JSON-RPC implemented in-house).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "qproof-mcp": "./dist/stdio.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "HOSTING.md", "examples"],
+  "engines": { "node": ">=20" },
+  "publishConfig": { "access": "public" },
+  "dependencies": {
+    "@qproof/core": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}

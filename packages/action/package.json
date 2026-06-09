@@ -1,0 +1,19 @@
+{
+  "name": "@qproof/action",
+  "version": "0.1.0",
+  "description": "qproof Action — fail CI when new quantum-vulnerable cryptography lands. GitHub Action wrapping qScan.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/main.js",
+  "files": ["dist", "action.yml", "README.md"],
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@qproof/core": "0.1.0",
+    "@qproof/qscan": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}

@@ -1,0 +1,52 @@
+# Quantum-readiness gate for CI.
+#
+# Drop this at .github/workflows/quantum-readiness.yml in your repository.
+# It scans the codebase on every pull request and push to main, fails the
+# build when NEW quantum-vulnerable cryptography at/above "high" is introduced,
+# uploads a SARIF report to GitHub code scanning, and comments a summary on PRs.
+
+name: Quantum Readiness
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write # upload SARIF to the Security tab
+  pull-requests: write # comment on pull requests
+
+jobs:
+  qproof:
+    name: qproof — Quantum Readiness Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Scan for quantum-vulnerable crypto
+        id: qproof
+        uses: dandelionlabs-io/qproof-tools/packages/action@v1
+        with:
+          path: "."
+          severity-threshold: "high"
+          fail-on-findings: "true"
+          format: "sarif"
+          output: "qproof.sarif.json"
+          # Only fail on NEW findings relative to a committed baseline:
+          # baseline: ".qproof/baseline.sarif.json"
+          comment-pr: "true"
+          github-token: ${{ github.token }}
+
+      - name: Upload SARIF to code scanning
+        if: always() # upload even when the scan failed the job
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.qproof.outputs.sarif-file }}
+
+      - name: Show readiness score
+        if: always()
+        run: |
+          echo "Readiness score: ${{ steps.qproof.outputs.readiness-score }}/100"
+          echo "Blocking findings: ${{ steps.qproof.outputs.findings-count }}"
