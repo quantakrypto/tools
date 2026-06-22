@@ -110,7 +110,7 @@ We deprecate before we remove. The window scales with the change's blast radius.
 | **File formats** (baseline, SARIF additions) | additive only within a MAJOR; format removal/restructuring is MAJOR with a documented migration. |
 
 Security fixes are exempt from deprecation windows where a window would prolong an
-exposure: a [P0 security change](../THREAT-MODEL.md#8-mitigations--roadmap-p0-mapping)
+exposure: a [P0 security change](THREAT-MODEL.md#8-mitigations--roadmap-p0-mapping)
 may change behavior in a MINOR (e.g. hosting filesystem MCP tools OFF by default),
 documented clearly in the CHANGELOG as a security-driven break.
 
@@ -120,5 +120,5 @@ documented clearly in the CHANGELOG as a security-driven break.
   style) with an explicit **Breaking** section when MAJOR.
 - Breaking changes to `@quantakrypto/core` reference (or add) an
   [ADR](adr/README.md) when they reflect a decision, not just a fix.
-- Releases are cut through the gated [release workflow](../../.github/workflows/release.yml)
+- Releases are cut through the gated [release workflow](../.github/workflows/release.yml)
   with npm provenance (see [SUPPLY-CHAIN.md](SUPPLY-CHAIN.md)).

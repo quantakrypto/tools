@@ -1,33 +1,67 @@
 # quantakrypto-tools
 
-[![CI](https://github.com/dandelionlabs-io/qproof-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/dandelionlabs-io/qproof-tools/actions/workflows/ci.yml)
+[![CI](https://github.com/quantakrypto/tools/actions/workflows/ci.yml/badge.svg)](https://github.com/quantakrypto/tools/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![npm @quantakrypto/qscan](https://img.shields.io/npm/v/@quantakrypto/qscan?label=%40quantakrypto%2Fqscan)](https://www.npmjs.com/package/@quantakrypto/qscan)
+[![npm @quantakrypto/mcp](https://img.shields.io/npm/v/@quantakrypto/mcp?label=%40quantakrypto%2Fmcp)](https://www.npmjs.com/package/@quantakrypto/mcp)
+[![npm @quantakrypto/sieve](https://img.shields.io/npm/v/@quantakrypto/sieve?label=%40quantakrypto%2Fsieve)](https://www.npmjs.com/package/@quantakrypto/sieve)
 ![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)
 ![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178c6)
 ![Runtime deps: 0](https://img.shields.io/badge/runtime%20deps-0-success)
-![Tests: 307 passing](https://img.shields.io/badge/tests-307%20passing-brightgreen)
 [![NIST FIPS 203/204/205](https://img.shields.io/badge/NIST-FIPS%20203%2F204%2F205-7c3aed)](docs/COMPLIANCE.md)
 
-Open-source post-quantum readiness tooling by [quantakrypto](https://quantakrypto.com/tools).
-Free to use, instrumented for nothing — find quantum-vulnerable cryptography,
-wire post-quantum readiness into your editor and your CI, and conformance-test
-post-quantum implementations.
+Open-source post-quantum readiness tooling by [quantakrypto](https://quantakrypto.com).
+Find quantum-vulnerable cryptography in any codebase, wire post-quantum readiness
+into your editor and your CI, and conformance-test post-quantum implementations —
+with **zero runtime dependencies** (Node built-ins only).
 
-> **Design goals:** simple, clean, reusable code; **zero runtime dependencies**
-> (Node built-ins only); everything documented, tested, and example-driven.
+> **Design goals:** simple, clean, reusable code; **zero runtime dependencies**;
+> everything documented, tested, and example-driven.
 
-## Packages
+## What's inside
 
-| Package | What it is | Install |
+| Tool | What it does | Get it |
 |---|---|---|
-| [`@quantakrypto/core`](packages/core) | Shared library — crypto detectors, vulnerable-dependency DB, inventory + SARIF reporting | `npm i @quantakrypto/core` |
-| [`@quantakrypto/qscan`](packages/qscan) | **qScan** — CLI that finds quantum-vulnerable crypto in any codebase | `npx @quantakrypto/qscan ./` |
-| [`@quantakrypto/mcp`](packages/mcp) | **quantakrypto MCP** — post-quantum readiness for AI coding agents (local + hostable) | `claude mcp add quantakrypto npx @quantakrypto/mcp` |
-| [`@quantakrypto/action`](packages/action) | **quantakrypto Action** — fail CI when new quantum-vulnerable crypto lands | `uses: dandelionlabs-io/qproof-tools/packages/action@v1` |
-| [`@quantakrypto/sieve`](packages/sieve) | **Sieve** — conformance battery for ML-KEM / ML-DSA implementations | `npx @quantakrypto/sieve` |
+| **[qScan](packages/qscan)** (`@quantakrypto/qscan`) | CLI that finds quantum-vulnerable crypto (RSA, (EC)DH, ECDSA, EdDSA, …) in any codebase and prints a readiness score. SARIF / JSON / CBOM output, baselines, incremental & parallel scans. | `npx @quantakrypto/qscan ./` |
+| **[MCP](packages/mcp)** (`@quantakrypto/mcp`) | Model Context Protocol server that gives AI coding agents post-quantum readiness tools (scan, inventory, explain, suggest-hybrid, CBOM). Local stdio + hostable HTTP. | `claude mcp add quantakrypto npx @quantakrypto/mcp` |
+| **[Sieve](packages/sieve)** (`@quantakrypto/sieve`) | Conformance battery for ML-KEM (FIPS 203), ML-DSA (FIPS 204), and SLH-DSA (FIPS 205) implementations, driven over a JSON stdin/stdout protocol. | `npx @quantakrypto/sieve --help` |
+| **[Action](packages/action)** (`@quantakrypto/action`) | GitHub Action that runs qScan in CI, uploads SARIF, annotates the diff, and fails the build only on **new** quantum-vulnerable crypto. | `uses: quantakrypto/tools/packages/action@v1` |
 
-`qScan`, `quantakrypto MCP`, and `quantakrypto Action` all share `@quantakrypto/core`. `Sieve` is
-standalone (it tests *other* implementations, it doesn't implement crypto).
+All three of qScan, MCP, and the Action share the engine in
+**[`@quantakrypto/core`](packages/core)** (`npm i @quantakrypto/core`) — detectors,
+the vulnerable-dependency DB, the readiness score, and SARIF/JSON/CBOM reporting.
+Sieve is standalone: it tests *other* implementations and implements no crypto itself.
+
+## Quick start
+
+```bash
+# 1. Scan a codebase for quantum-vulnerable cryptography.
+npx @quantakrypto/qscan ./
+
+# 2. Give your AI coding agent post-quantum readiness tools.
+claude mcp add quantakrypto npx @quantakrypto/mcp
+
+# 3. Conformance-test a post-quantum implementation (adapter speaks the JSON protocol).
+npx @quantakrypto/sieve --impl "node ./my-impl.js" --param ml-kem-768
+```
+
+Add the CI gate by dropping
+[`packages/action/examples/quantum-readiness.yml`](packages/action/examples/quantum-readiness.yml)
+into `.github/workflows/`, or wire it up directly:
+
+```yaml
+- uses: quantakrypto/tools/packages/action@v1
+  with:
+    path: "."
+    severity-threshold: "high"
+```
+
+Each package README has the full options reference and more examples:
+[qScan](packages/qscan/README.md) ·
+[MCP](packages/mcp/README.md) ·
+[Sieve](packages/sieve/README.md) ·
+[Action](packages/action/README.md) ·
+[core](packages/core/README.md).
 
 ## Workspace layout
 
@@ -38,7 +72,7 @@ quantakrypto-tools/
 │   ├── qscan/    @quantakrypto/qscan   — CLI
 │   ├── mcp/      @quantakrypto/mcp     — MCP server (stdio now, HTTP scaffold for hosting)
 │   ├── action/   @quantakrypto/action — GitHub Action
-│   └── sieve/    @quantakrypto/sieve  — conformance battery + JSON protocol
+│   └── sieve/    @quantakrypto/sieve   — conformance battery + JSON protocol
 ├── docs/         architecture, hosted-MCP design, improvement roadmap
 └── examples/     end-to-end examples
 ```
@@ -77,3 +111,9 @@ Full documentation lives in **[`docs/`](docs/README.md)**:
 
 [Apache-2.0](LICENSE). The methodology is open; the audits, certificates, and
 deliverables are where the [quantakrypto](https://quantakrypto.com) practice lives.
+
+## Support & training
+
+Questions, commercial support, or post-quantum readiness training for your team —
+visit **[quantakrypto.com](https://quantakrypto.com)** or email
+**[hello@quantakrypto.com](mailto:hello@quantakrypto.com)**.

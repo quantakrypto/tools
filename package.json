@@ -9,10 +9,10 @@
   "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dandelionlabs-io/qproof-tools.git"
+    "url": "git+https://github.com/quantakrypto/tools.git"
   },
   "bugs": {
-    "url": "https://github.com/dandelionlabs-io/qproof-tools/issues"
+    "url": "https://github.com/quantakrypto/tools/issues"
   },
   "engines": {
     "node": ">=20"

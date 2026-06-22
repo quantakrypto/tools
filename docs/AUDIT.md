@@ -113,11 +113,10 @@ gets fully scanned (see §3).
 **Concrete smells.**
 - `inventory.ts:85 void SEVERITIES;` — a dead reference kept only to silence an
   unused-var lint; the seeding it claims to guard is done inline above. Remove.
-- SARIF `informationUri` is `https://github.com/qproof-tools/qproof`
-  (`report.ts:19`) while qscan's fallback SARIF uses
-  `https://github.com/qproof/qproof-tools` (`qscan/src/report.ts:87`) and the
-  README repo is `dandelionlabs-io/qproof-tools`. Three different URLs for one
-  project.
+- SARIF `informationUri` previously diverged across the codebase (three
+  different repo URLs for one project). It is now unified to the canonical
+  repository `https://github.com/quantakrypto/tools` in both `core` (`report.ts:19`)
+  and qscan's fallback SARIF (`qscan/src/report.ts`), matching the README.
 
 ### 2.2 `@quantakrypto/qscan`
 

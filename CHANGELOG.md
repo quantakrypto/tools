@@ -77,5 +77,5 @@ TypeScript toolset for post-quantum readiness.
   driven over a JSON protocol; ships no KAT vectors and never fabricates them.
 - Project governance, CI, and a multi-discipline audit set under `docs/`.
 
-[Unreleased]: https://github.com/dandelionlabs-io/qproof-tools/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/dandelionlabs-io/qproof-tools/releases/tag/v0.1.0
+[Unreleased]: https://github.com/quantakrypto/tools/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/quantakrypto/tools/releases/tag/v0.1.0

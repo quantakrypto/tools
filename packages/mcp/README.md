@@ -225,3 +225,9 @@ streams) — no process spawning.
 ## License
 
 Apache-2.0
+
+## Support & training
+
+Questions, commercial support, or post-quantum readiness training for your team —
+visit **[quantakrypto.com](https://quantakrypto.com)** or email
+**[hello@quantakrypto.com](mailto:hello@quantakrypto.com)**.

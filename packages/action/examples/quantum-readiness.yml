@@ -27,7 +27,7 @@ jobs:
 
       - name: Scan for quantum-vulnerable crypto
         id: quantakrypto
-        uses: dandelionlabs-io/qproof-tools/packages/action@v1
+        uses: quantakrypto/tools/packages/action@v1
         with:
           path: "."
           severity-threshold: "high"

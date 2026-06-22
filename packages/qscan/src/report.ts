@@ -101,7 +101,7 @@ function fallbackSarif(result: ScanResult): Record<string, unknown> {
         tool: {
           driver: {
             name: "qscan",
-            informationUri: "https://github.com/qproof/qproof-tools",
+            informationUri: "https://github.com/quantakrypto/tools",
             version: result.toolVersion,
             rules: [],
           },

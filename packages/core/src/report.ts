@@ -16,7 +16,7 @@ export interface SarifLog {
 const SARIF_SCHEMA =
   "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json";
 
-const INFORMATION_URI = "https://github.com/qproof-tools/qproof";
+const INFORMATION_URI = "https://github.com/quantakrypto/tools";
 
 /** Map our severity to a SARIF result level. */
 function sarifLevel(severity: Severity): "error" | "warning" | "note" {

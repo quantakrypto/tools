@@ -4,14 +4,14 @@
   "description": "Sieve — conformance battery for ML-KEM / ML-DSA implementations. Drives any implementation over a simple stdin/stdout JSON protocol. Zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
-  "homepage": "https://github.com/dandelionlabs-io/qproof-tools/tree/main/packages/sieve#readme",
+  "homepage": "https://github.com/quantakrypto/tools/tree/main/packages/sieve#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dandelionlabs-io/qproof-tools.git",
+    "url": "git+https://github.com/quantakrypto/tools.git",
     "directory": "packages/sieve"
   },
   "bugs": {
-    "url": "https://github.com/dandelionlabs-io/qproof-tools/issues"
+    "url": "https://github.com/quantakrypto/tools/issues"
   },
   "type": "module",
   "bin": {

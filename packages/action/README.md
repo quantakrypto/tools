@@ -31,7 +31,7 @@ jobs:
 
       - name: quantakrypto — Quantum Readiness Scan
         id: quantakrypto
-        uses: dandelionlabs-io/qproof-tools/packages/action@v1
+        uses: quantakrypto/tools/packages/action@v1
         with:
           path: "."
           severity-threshold: "high"
@@ -141,3 +141,13 @@ Typical adoption flow:
 - **Testable core** — input parsing, the threshold→exit decision, summary
   rendering, the escaping helpers, and the annotation wire format are pure
   functions, unit-tested with `node:test` (no real runner required).
+
+## License
+
+Apache-2.0
+
+## Support & training
+
+Questions, commercial support, or post-quantum readiness training for your team —
+visit **[quantakrypto.com](https://quantakrypto.com)** or email
+**[hello@quantakrypto.com](mailto:hello@quantakrypto.com)**.
