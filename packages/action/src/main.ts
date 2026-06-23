@@ -15,6 +15,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { applyBaseline, fingerprintFinding, loadBaseline } from "@quantakrypto/core";
 import type { Baseline, Finding, ScanResult, Severity } from "@quantakrypto/core";
@@ -312,9 +313,12 @@ export async function run(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   }
 }
 
-// Run when invoked as the action's main module (dist/main.js), not when imported by tests.
+// Run when invoked as the action's entrypoint, not when imported by tests.
+// Compare this module's URL against the script Node was launched with so the
+// guard holds regardless of the emitted filename (tsc's `main.js` or the
+// bundled `index.js` that `action.yml` points at).
 const invokedDirectly =
-  process.argv[1] !== undefined && resolve(process.argv[1]).endsWith("main.js");
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 if (invokedDirectly) {
   run().catch((err: unknown) => {
     setFailed(`quantakrypto: ${(err as Error).message}`);

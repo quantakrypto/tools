@@ -1,5 +1,12 @@
 node_modules/
 dist/
+# The GitHub Action ships a committed, self-contained bundle so it can run via
+# `uses:` without a node_modules install. Track only that one bundle file; the
+# rest of the action's dist/ and every other package's dist/ stay ignored.
+# (Re-include the dir non-recursively first so a file negation inside it can win.)
+!packages/action/dist/
+packages/action/dist/*
+!packages/action/dist/index.js
 *.tsbuildinfo
 .DS_Store
 coverage/
