@@ -74,36 +74,35 @@ jobs:
             exit 1
           fi
 
-      # Publish the shared library first (consumers depend on it), then the
-      # leaf packages. --provenance produces a signed Sigstore attestation via
-      # the id-token OIDC token, visible on each package's npm page.
+      # Publish every non-private workspace, skipping any version already on npm
+      # so re-running on an unchanged tree is a clean no-op instead of an
+      # "cannot publish over existing version" failure. --provenance produces a
+      # signed Sigstore attestation via the id-token OIDC token, shown on npm.
       #
-      # NOTE on @quantakrypto/action: its dist/ MUST be committed/bundled before it can
-      # be consumed as a `uses:` action (ROADMAP §5). Publishing it to npm does not
-      # remove that requirement; keep its publish line commented until dist is
-      # committed and a "dist is fresh" CI gate exists.
-      - name: Publish @quantakrypto/core
+      # NOTE: @quantakrypto/action is marked "private" and is skipped here — it
+      # ships as a GitHub Action via `uses: quantakrypto/tools/packages/action@v1`
+      # (dist committed + kept fresh by the "action dist is fresh" CI gate), not npm.
+      - name: Publish to npm (skip versions already published)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --workspace @quantakrypto/core --provenance --access public
-
-      - name: Publish @quantakrypto/qscan
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --workspace @quantakrypto/qscan --provenance --access public
-
-      - name: Publish @quantakrypto/mcp
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --workspace @quantakrypto/mcp --provenance --access public
-
-      - name: Publish @quantakrypto/sieve
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --workspace @quantakrypto/sieve --provenance --access public
-
-      # - name: Publish @quantakrypto/action
-      #   # BLOCKED until packages/action/dist is committed/bundled (ROADMAP §5).
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      #   run: npm publish --workspace @quantakrypto/action --provenance --access public
+        run: |
+          set -euo pipefail
+          count=0
+          for dir in packages/*/; do
+            manifest="${dir}package.json"
+            [ -f "$manifest" ] || continue
+            if [ "$(node -p "require('./$manifest').private === true")" = "true" ]; then
+              echo "— ${dir%/} is private — skipping"
+              continue
+            fi
+            name=$(node -p "require('./$manifest').name")
+            version=$(node -p "require('./$manifest').version")
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "✓ ${name}@${version} already on npm — skipping"
+            else
+              echo "→ publishing ${name}@${version}"
+              npm publish --workspace "${name}" --provenance --access public
+              count=$((count + 1))
+            fi
+          done
+          echo "Published ${count} new package version(s)."
