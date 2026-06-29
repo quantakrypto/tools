@@ -48,15 +48,18 @@ jobs:
         run: npm run format:check
 
   coverage:
-    name: coverage (node 20, advisory)
+    name: coverage (node 22, advisory)
     runs-on: ubuntu-latest
     # Non-gating: Node's --experimental-test-coverage is informational for now.
+    # Pinned to Node 22 — `npm run test:coverage` needs native root-glob
+    # expansion (Node 21+) and Node 20's coverage reporter crashes on the
+    # cross-package dist source maps. See the //test:coverage note in package.json.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run build
