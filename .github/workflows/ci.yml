@@ -88,7 +88,8 @@ jobs:
       # crash (exit > 1) or no output is a real failure we DO want to catch.
       - name: Self-scan runs cleanly (findings OK, crash not OK)
         run: |
-          node packages/qscan/dist/cli.js packages --format sarif -o /tmp/dogfood.sarif.json; code=$?
+          code=0
+          node packages/qscan/dist/cli.js packages --format sarif -o /tmp/dogfood.sarif.json || code=$?
           if [ "$code" -gt 1 ]; then echo "::error::qScan crashed (exit $code)"; exit 1; fi
           test -s /tmp/dogfood.sarif.json || { echo "::error::qScan produced no output"; exit 1; }
           node scripts/validate-sarif.mjs /tmp/dogfood.sarif.json
