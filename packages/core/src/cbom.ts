@@ -115,7 +115,7 @@ export function toCbom(result: ScanResult): CycloneDxBom {
                 : g.primitive === "kem"
                   ? ["encapsulate", "decapsulate"]
                   : g.primitive === "key-agree"
-                    ? ["keygen"]
+                    ? ["keyagree"]
                     : ["other"],
           },
           quantumVulnerable: isQuantumVulnerable(g.algorithm),

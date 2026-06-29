@@ -19,6 +19,8 @@ interface PemRule {
   remediation: string;
   hndl: boolean;
   cwe: string;
+  /** True when the matched snippet IS key material (reporters drop the snippet). */
+  sensitive?: boolean;
 }
 
 const PEM_RULES: PemRule[] = [
@@ -31,6 +33,7 @@ const PEM_RULES: PemRule[] = [
     algorithm: "RSA",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded RSA private key (PKCS#1 PEM); classical and not quantum-safe.",
     remediation: "Migrate to ML-DSA / ML-KEM keys and remove embedded private keys from source.",
   },
@@ -43,6 +46,7 @@ const PEM_RULES: PemRule[] = [
     algorithm: "ECDSA",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded EC private key (SEC1 PEM); classical ECDSA/ECDH key, not quantum-safe.",
     remediation: "Migrate to ML-DSA (FIPS 204) keys and remove embedded private keys from source.",
   },
@@ -55,6 +59,7 @@ const PEM_RULES: PemRule[] = [
     algorithm: "DSA",
     hndl: false,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded DSA private key (PEM); classical, already deprecated, and not quantum-safe.",
     remediation: "Rotate immediately (DSA is deprecated) and migrate to ML-DSA-65 (FIPS 204).",
   },
@@ -67,6 +72,7 @@ const PEM_RULES: PemRule[] = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded OpenSSH private key (RSA/ECDSA/Ed25519); classical and not quantum-safe.",
     remediation: "Rotate the key; plan migration to PQC-capable SSH (e.g. sntrup761x25519).",
   },
@@ -79,6 +85,7 @@ const PEM_RULES: PemRule[] = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message:
       "Embedded PGP/GPG private key block (RSA/ECDSA/EdDSA/ElGamal); classical and not quantum-safe.",
     remediation: "Rotate the key; track OpenPGP PQC drafts for migration.",
@@ -105,6 +112,7 @@ const PEM_RULES: PemRule[] = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded PKCS#8 private key; likely classical RSA/EC, not quantum-safe.",
     remediation: "Migrate to PQC keys and remove embedded private keys from source.",
   },
@@ -147,6 +155,7 @@ export const pemDetector: Detector = {
             algorithm: rule.algorithm,
             hndl: rule.hndl,
             cwe: rule.cwe,
+            sensitive: rule.sensitive,
             message: rule.message,
             remediation: rule.remediation,
             file,

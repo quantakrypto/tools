@@ -49,26 +49,33 @@ export async function changedFiles(root: string, since?: string): Promise<string
 
   const out = new Set<string>();
 
+  // `--relative` makes git emit paths relative to `root` (the scan cwd) rather
+  // than repo-root-relative, so `scan()` can join them against a sub-directory
+  // root. Without it, a `--changed` scan of a subdirectory resolves nothing.
   if (since) {
     for (const f of toLines(
-      await git(root, ["diff", "--name-only", "--diff-filter=ACMR", since]),
+      await git(root, ["diff", "--name-only", "--relative", "--diff-filter=ACMR", since]),
     )) {
       out.add(f);
     }
   }
 
   // Always include local uncommitted edits (staged + unstaged), filtered to ACMR.
-  for (const f of toLines(await git(root, ["diff", "--name-only", "--diff-filter=ACMR"]))) {
+  for (const f of toLines(
+    await git(root, ["diff", "--name-only", "--relative", "--diff-filter=ACMR"]),
+  )) {
     out.add(f);
   }
   for (const f of toLines(
-    await git(root, ["diff", "--name-only", "--diff-filter=ACMR", "--cached"]),
+    await git(root, ["diff", "--name-only", "--relative", "--diff-filter=ACMR", "--cached"]),
   )) {
     out.add(f);
   }
 
   // Untracked (but not ignored) files.
-  for (const f of toLines(await git(root, ["ls-files", "--others", "--exclude-standard"]))) {
+  for (const f of toLines(
+    await git(root, ["ls-files", "--others", "--exclude-standard", "--", "."]),
+  )) {
     out.add(f);
   }
 

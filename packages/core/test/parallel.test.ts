@@ -84,6 +84,37 @@ test("scanParallel falls back to serial on a small repo and matches scan()", asy
   }
 });
 
+test("scanParallel enumerator filters explicit file lists (binary + exclude) like serial", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "quantakrypto-parfilter-"));
+  try {
+    await mkdir(path.join(dir, "src"), { recursive: true });
+    await mkdir(path.join(dir, "skip"), { recursive: true });
+    await writeFile(path.join(dir, "src", "a.ts"), "const e = crypto.createECDH('p256');\n");
+    // A binary file and an excluded-dir file that BOTH carry crypto usage; the
+    // serial path drops them via filterExplicitFiles, so parallel must too.
+    await writeFile(path.join(dir, "image.png"), "crypto.createECDH('p256');\n");
+    await writeFile(path.join(dir, "skip", "c.ts"), "const e = crypto.createECDH('p256');\n");
+
+    const files = ["src/a.ts", "image.png", "skip/c.ts"];
+    const serial = await scan({ root: dir, files, exclude: ["skip"] });
+    const parallel = await scanParallel({ root: dir, files, exclude: ["skip"], concurrency: 4 });
+
+    // Only src/a.ts survives the binary + exclude filtering, in BOTH paths.
+    assert.equal(serial.filesScanned, 1);
+    assert.equal(parallel.filesScanned, serial.filesScanned);
+    assert.deepEqual(
+      parallel.findings.map((f) => f.location.file),
+      ["src/a.ts"],
+    );
+    assert.deepEqual(
+      parallel.findings.map((f) => `${f.location.file}:${f.location.line}:${f.ruleId}`),
+      serial.findings.map((f) => `${f.location.file}:${f.location.line}:${f.ruleId}`),
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("scanParallel with concurrency 1 runs in-process", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "quantakrypto-par1-"));
   try {

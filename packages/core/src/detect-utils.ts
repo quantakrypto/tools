@@ -52,6 +52,8 @@ export interface FindingSpec {
   remediation?: string;
   /** Associated CWE id (e.g. "CWE-327"). */
   cwe?: string;
+  /** Marks the matched snippet as the sensitive value itself (key material). */
+  sensitive?: boolean;
   /** The matched source text and its start offset within `content`. */
   file: string;
   content: string;
@@ -98,6 +100,7 @@ export function makeFinding(spec: FindingSpec): Finding {
   if (spec.algorithm) finding.algorithm = spec.algorithm;
   if (remediation) finding.remediation = remediation;
   if (spec.cwe) finding.cwe = spec.cwe;
+  if (spec.sensitive) finding.sensitive = true;
   return finding;
 }
 

@@ -9,7 +9,14 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
-import { scan, walkFiles, looksMinified, isGeneratedPath } from "../src/index.js";
+import {
+  scan,
+  walkFiles,
+  looksMinified,
+  isGeneratedPath,
+  AbortError,
+  BudgetExceededError,
+} from "../src/index.js";
 import type { Detector } from "../src/index.js";
 
 async function collect(iter: AsyncIterable<string>): Promise<string[]> {
@@ -125,6 +132,84 @@ test("scan accepts a detectors override", async () => {
     const rules = new Set(r.findings.map((f) => f.ruleId));
     assert.ok(rules.has("only-ecdh"));
     assert.ok(!rules.has("node-crypto-ecdh"), "built-ins replaced by override");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/** A tree of N tiny source files under src/, each with a crypto call. */
+async function makeManyFiles(n: number): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "quantakrypto-budget-"));
+  await mkdir(path.join(dir, "src"), { recursive: true });
+  for (let i = 0; i < n; i++) {
+    await writeFile(
+      path.join(dir, "src", `f${String(i).padStart(3, "0")}.ts`),
+      "const e = crypto.createECDH('p256');\n",
+    );
+  }
+  return dir;
+}
+
+test("scan aborts cooperatively via an AbortSignal", async () => {
+  const dir = await makeManyFiles(10);
+  try {
+    const ctrl = new AbortController();
+    let seen = 0;
+    // Abort after the first file is reported; the next iteration must throw.
+    await assert.rejects(
+      scan({
+        root: dir,
+        signal: ctrl.signal,
+        onFile: () => {
+          seen += 1;
+          if (seen === 1) ctrl.abort();
+        },
+      }),
+      (err: unknown) => {
+        assert.ok(err instanceof AbortError, "throws AbortError");
+        assert.equal((err as Error).name, "AbortError");
+        return true;
+      },
+    );
+    // It stopped early rather than walking all 10 files.
+    assert.ok(seen < 10, `aborted mid-walk (saw ${seen} of 10)`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("scan throws BudgetExceededError when maxFiles is exceeded", async () => {
+  const dir = await makeManyFiles(10);
+  try {
+    await assert.rejects(scan({ root: dir, maxFiles: 3 }), (err: unknown) => {
+      assert.ok(err instanceof BudgetExceededError, "throws BudgetExceededError");
+      assert.match((err as Error).message, /maxFiles/);
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("scan throws BudgetExceededError when maxBytes is exceeded", async () => {
+  const dir = await makeManyFiles(10);
+  try {
+    // Each file is ~37 bytes; a 50-byte budget is blown after the second file.
+    await assert.rejects(scan({ root: dir, maxBytes: 50 }), (err: unknown) => {
+      assert.ok(err instanceof BudgetExceededError, "throws BudgetExceededError");
+      assert.match((err as Error).message, /maxBytes/);
+      return true;
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("scan with generous budgets and no signal completes normally", async () => {
+  const dir = await makeManyFiles(5);
+  try {
+    const r = await scan({ root: dir, maxFiles: 100, maxBytes: 1_000_000 });
+    assert.equal(r.filesScanned, 5);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

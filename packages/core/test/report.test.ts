@@ -194,6 +194,92 @@ test("formatSummary handles the clean (no findings) case", () => {
   assert.ok(/No classical asymmetric cryptography/.test(out));
 });
 
+test("redactSnippets drops every snippet from SARIF and JSON output", () => {
+  const r = sampleResult(); // first finding carries a snippet.
+  assert.ok(
+    r.findings.some((f) => f.location.snippet),
+    "fixture has at least one snippet to redact",
+  );
+
+  // SARIF: no region.snippet anywhere when redaction is on.
+  const run = toSarif(r, { redactSnippets: true }).runs[0] as Record<string, any>;
+  for (const res of run.results) {
+    assert.equal(
+      res.locations[0].physicalLocation.region.snippet,
+      undefined,
+      "SARIF snippet redacted",
+    );
+  }
+  // …but present by default.
+  const runDefault = toSarif(r).runs[0] as Record<string, any>;
+  assert.ok(
+    runDefault.results.some(
+      (res: any) => res.locations[0].physicalLocation.region.snippet !== undefined,
+    ),
+    "snippet present without redaction",
+  );
+
+  // JSON: every finding's location.snippet is undefined when redaction is on.
+  const json = toJson(r, { redactSnippets: true });
+  for (const f of json.findings as Array<{ location: { snippet?: string } }>) {
+    assert.equal(f.location.snippet, undefined, "JSON snippet redacted");
+  }
+  const jsonDefault = toJson(r);
+  assert.ok(
+    (jsonDefault.findings as Array<{ location: { snippet?: string } }>).some(
+      (f) => f.location.snippet,
+    ),
+    "JSON snippet present without redaction",
+  );
+});
+
+test("sensitive findings (key material) omit their snippet even with redaction off", () => {
+  // A PEM private key + an SSH public key — the snippet IS the sensitive value.
+  const pem: Finding = {
+    ruleId: "pem-rsa-private-key",
+    title: "RSA private key (PEM)",
+    category: "certificate",
+    severity: "critical",
+    confidence: "high",
+    algorithm: "RSA",
+    hndl: true,
+    sensitive: true,
+    message: "Embedded RSA private key.",
+    location: { file: "key.pem", line: 1, snippet: "-----BEGIN RSA PRIVATE KEY-----" },
+  };
+  const ssh: Finding = {
+    ruleId: "ssh-public-key",
+    title: "Classical SSH public key (ssh-rsa)",
+    category: "certificate",
+    severity: "low",
+    confidence: "medium",
+    algorithm: "RSA",
+    hndl: false,
+    sensitive: true,
+    message: "SSH public key.",
+    location: { file: "authorized_keys", line: 1, snippet: "ssh-rsa AAAAB3Nz... user@host" },
+  };
+  const r: ScanResult = {
+    ...sampleResult(),
+    findings: [pem, ssh],
+    inventory: buildInventory([pem, ssh]),
+  };
+
+  // Redaction flag OFF — snippets must STILL be omitted for sensitive findings.
+  const run = toSarif(r).runs[0] as Record<string, any>;
+  for (const res of run.results) {
+    assert.equal(
+      res.locations[0].physicalLocation.region.snippet,
+      undefined,
+      "sensitive SARIF snippet always dropped",
+    );
+  }
+  const json = toJson(r);
+  for (const f of json.findings as Array<{ location: { snippet?: string } }>) {
+    assert.equal(f.location.snippet, undefined, "sensitive JSON snippet always dropped");
+  }
+});
+
 test("remediationFor covers every algorithm family", () => {
   const families: AlgorithmFamily[] = [
     "RSA",

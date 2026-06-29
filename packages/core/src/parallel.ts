@@ -16,9 +16,9 @@ import { fileURLToPath } from "node:url";
 import type { Worker as NodeWorker } from "node:worker_threads";
 
 import type { Finding, ParallelScanOptions, ScanResult } from "./types.js";
-import { walkFiles, toPosix } from "./walk.js";
+import { walkFiles } from "./walk.js";
 import { buildInventory } from "./inventory.js";
-import { compareFindings, scan } from "./scan.js";
+import { compareFindings, filterExplicitFileList, scan } from "./scan.js";
 import { VERSION } from "./version.js";
 
 /** One unit of work dispatched to a worker. */
@@ -106,7 +106,9 @@ function shouldParallelize(options: ParallelScanOptions, files: SizedFile[]): bo
 async function enumerateFiles(options: ParallelScanOptions, baseDir: string): Promise<SizedFile[]> {
   const rels: string[] = [];
   if (options.files) {
-    for (const f of options.files) rels.push(toPosix(f));
+    // Apply the SAME include/exclude/binary filtering the serial path uses via
+    // `filterExplicitFiles`, so `--parallel` is byte-for-byte identical to serial.
+    for (const rel of filterExplicitFileList(options.files, options)) rels.push(rel);
   } else {
     for await (const rel of walkFiles(options.root, {
       include: options.include,

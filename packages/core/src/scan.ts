@@ -19,6 +19,7 @@ import { pemDetector } from "./detectors/pem.js";
 import { defaultRegistry, detectorScope } from "./registry.js";
 import { isManifestFile, scanManifest } from "./dependencies.js";
 import { buildInventory } from "./inventory.js";
+import { AbortError, BudgetExceededError } from "./errors.js";
 import { VERSION } from "./version.js";
 
 /**
@@ -90,6 +91,12 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
 
   const findings: Finding[] = [];
   let filesScanned = 0;
+  let bytesScanned = 0;
+
+  // Work-budget / cancellation controls (all optional, unlimited when omitted).
+  const signal = options.signal;
+  const maxFiles = options.maxFiles;
+  const maxBytes = options.maxBytes;
 
   // Source of relative paths: an explicit file list (incremental) or the walker.
   const relPaths: AsyncIterable<string> = options.files
@@ -102,6 +109,14 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
       });
 
   for await (const rel of relPaths) {
+    // Cooperative cancellation: check the signal at the top of every iteration.
+    if (signal?.aborted) throw new AbortError();
+
+    // File-count budget: enforced before reading the next file.
+    if (typeof maxFiles === "number" && filesScanned >= maxFiles) {
+      throw new BudgetExceededError(`maxFiles budget exceeded (limit: ${maxFiles}).`);
+    }
+
     // In single-file mode, walkFiles yields the basename; map back to the file.
     const absPath = singleFileName ? options.root : path.join(baseDir, ...rel.split("/"));
     const reportedPath = singleFileName ? toPosix(rel) : rel;
@@ -119,6 +134,12 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     // Manifests are always scanned (their findings are dependency findings).
     if (!scanMinified && !isManifestFile(reportedPath) && looksMinified(content)) {
       continue;
+    }
+
+    // Cumulative-byte budget: enforced once this file's bytes are accounted for.
+    bytesScanned += Buffer.byteLength(content, "utf8");
+    if (typeof maxBytes === "number" && bytesScanned > maxBytes) {
+      throw new BudgetExceededError(`maxBytes budget exceeded (limit: ${maxBytes}).`);
     }
 
     filesScanned += 1;
@@ -150,11 +171,18 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
 
 /**
  * Filter an explicit relative file list down to the paths that pass the binary
- * filter and the include/exclude patterns, yielding them in sorted order for
+ * filter and the include/exclude patterns, returning them deduped and sorted for
  * deterministic output. Size limits are enforced later (we still read manifests
  * over the cap). Non-existent files are simply skipped at read time.
+ *
+ * Pure + synchronous, and exported so the parallel enumerator applies the EXACT
+ * same filtering for explicit file lists as the serial path (byte-for-byte
+ * identical results under `--parallel`).
  */
-async function* filterExplicitFiles(files: string[], options: ScanOptions): AsyncGenerator<string> {
+export function filterExplicitFileList(
+  files: readonly string[],
+  options: Pick<ScanOptions, "include" | "exclude">,
+): string[] {
   const include = options.include ?? [];
   const exclude = options.exclude ?? [];
   const seen = new Set<string>();
@@ -167,12 +195,17 @@ async function* filterExplicitFiles(files: string[], options: ScanOptions): Asyn
     })
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
-  for (const rel of list) {
-    if (isBinaryPath(rel)) continue;
-    if (include.length > 0 && !matchesAny(rel, include)) continue;
-    if (matchesAny(rel, exclude)) continue;
-    yield rel;
-  }
+  return list.filter((rel) => {
+    if (isBinaryPath(rel)) return false;
+    if (include.length > 0 && !matchesAny(rel, include)) return false;
+    if (matchesAny(rel, exclude)) return false;
+    return true;
+  });
+}
+
+/** Async-generator wrapper around {@link filterExplicitFileList} for `scan()`. */
+async function* filterExplicitFiles(files: string[], options: ScanOptions): AsyncGenerator<string> {
+  for (const rel of filterExplicitFileList(files, options)) yield rel;
 }
 
 /** Local substring/prefix matcher (mirrors the walker's pattern semantics). */

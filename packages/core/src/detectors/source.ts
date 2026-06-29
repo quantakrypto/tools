@@ -38,9 +38,11 @@ const RE_GENERATE_KEYPAIR =
 const RE_CREATE_SIGN_VERIFY = /create(?:Sign|Verify)\s*\(/g;
 // One-shot crypto.sign/verify(algorithm, data, key). Anchored so it doesn't
 // fire inside identifiers like `assign(` or `createSign(` (which the dedicated
-// createSign/createVerify rule handles).
+// createSign/createVerify rule handles). The first argument is either a quoted
+// digest-algorithm string (RSA/ECDSA) or `null` — Node's EdDSA one-shot form is
+// `crypto.sign(null, data, edKey)`, which must still be detected.
 const RE_ONESHOT_SIGN_VERIFY =
-  /(?:^|[^.\w])(?:crypto\.)?(sign|verify)\s*\(\s*['"`][\w.-]+['"`]\s*,/g;
+  /(?:^|[^.\w])(?:crypto\.)?(sign|verify)\s*\(\s*(?:['"`][\w.-]+['"`]|null)\s*,/g;
 const RE_CREATE_DH = /createDiffieHellman(?:Group)?\s*\(/g;
 const RE_GET_DH = /getDiffieHellman\s*\(\s*['"`](modp\d+)['"`]\s*\)/g;
 const RE_CREATE_ECDH = /createECDH\s*\(/g;
@@ -678,6 +680,7 @@ const sshCertDetector: Detector = {
           algorithm,
           hndl: false,
           cwe: CWE_BROKEN_CRYPTO,
+          sensitive: true,
           message: `SSH public key type "${tok}" is a classical key forgeable by a quantum attacker.`,
           remediation:
             "Plan migration to PQC-capable SSH (e.g. sntrup761x25519 KEX, PQC host keys).",

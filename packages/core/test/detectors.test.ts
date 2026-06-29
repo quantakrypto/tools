@@ -98,6 +98,20 @@ test("Node crypto one-shot sign/verify is flagged", () => {
   assert.equal(f.hndl, false);
 });
 
+test("Node crypto EdDSA one-shot sign/verify with null algorithm is flagged", () => {
+  // Node's Ed25519/Ed448 one-shot form passes `null` as the first argument:
+  // crypto.sign(null, data, edKey). It must still be detected.
+  const sign = byRule(run("a.ts", "crypto.sign(null, msg, key);"), "node-crypto-sign-oneshot");
+  assert.ok(sign, "one-shot crypto.sign(null, …) detected");
+  assert.equal(sign.category, "signature");
+
+  const verify = byRule(
+    run("a.ts", "crypto.verify(null, msg, key, sig);"),
+    "node-crypto-sign-oneshot",
+  );
+  assert.ok(verify, "one-shot crypto.verify(null, …) detected");
+});
+
 test("Node crypto getDiffieHellman MODP group is HNDL", () => {
   const f = byRule(
     run("a.ts", "const dh = crypto.getDiffieHellman('modp14');"),

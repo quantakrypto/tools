@@ -18,6 +18,9 @@ export type { SarifLog } from "./report.js";
 // Core orchestration + built-in detector set.
 export { scan, detectors, detectFile, compareFindings } from "./scan.js";
 
+// Scan cancellation / work-budget errors.
+export { AbortError, BudgetExceededError } from "./errors.js";
+
 // Parallel scanning (worker_threads pool) + pure merge/chunk helpers.
 export { scanParallel, mergeChunkResults, chunkByBytes } from "./parallel.js";
 export type { ScanChunk, ChunkResult, SizedFile } from "./parallel.js";
@@ -52,8 +55,12 @@ export { buildInventory } from "./inventory.js";
 // Vulnerable-dependency database (the manifest scanner is used internally by scan()).
 export { vulnerableDependencies } from "./dependencies.js";
 
+// Severity utilities (ordering, threshold, SARIF level) — shared across tools.
+export { SEVERITY_ORDER, severityRank, meetsThreshold, sarifLevel } from "./severity.js";
+
 // Reporters.
 export { toSarif, toJson, formatSummary } from "./report.js";
+export type { ReportOptions } from "./report.js";
 
 // CycloneDX 1.6 cryptographic bill of materials (CBOM) export.
 export { toCbom } from "./cbom.js";

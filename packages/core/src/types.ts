@@ -68,6 +68,12 @@ export interface Finding {
   remediation?: string;
   /** Associated CWE identifier, e.g. "CWE-327" (broken crypto), "CWE-326" (weak strength). */
   cwe?: string;
+  /**
+   * True when the matched snippet IS the sensitive value (e.g. a PEM private/
+   * public key block, an `ssh-rsa AAAA…` public key). Reporters ALWAYS drop the
+   * snippet for such findings, regardless of any redaction flag.
+   */
+  sensitive?: boolean;
   location: SourceLocation;
 }
 
@@ -166,6 +172,23 @@ export interface ScanOptions {
   detectors?: Detector[];
   /** Optional progress callback. */
   onFile?: (file: string) => void;
+  /**
+   * Optional abort signal. When it fires mid-walk the scan stops cooperatively
+   * and rejects with an `AbortError` (a `DOMException`-like error with
+   * `name === "AbortError"`).
+   */
+  signal?: AbortSignal;
+  /**
+   * Work budget: maximum number of files to scan. When exceeded mid-walk the
+   * scan stops and throws a `BudgetExceededError`. Unlimited when omitted.
+   */
+  maxFiles?: number;
+  /**
+   * Work budget: maximum cumulative bytes of scanned file content. When
+   * exceeded mid-walk the scan stops and throws a `BudgetExceededError`.
+   * Unlimited when omitted.
+   */
+  maxBytes?: number;
 }
 
 /** Extra options for {@link scanParallel}, layered onto {@link ScanOptions}. */

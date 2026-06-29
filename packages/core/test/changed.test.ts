@@ -62,3 +62,44 @@ test("changedFiles lists untracked + modified files in a git repo", async (t) =>
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("changedFiles on a subdirectory returns paths relative to that subdir", async (t) => {
+  if (!(await gitAvailable())) {
+    t.skip("git not available");
+    return;
+  }
+  const dir = await mkdtemp(path.join(tmpdir(), "quantakrypto-gitsub-"));
+  try {
+    const run = (args: string[], cwd = dir) =>
+      execFileAsync("git", args, { cwd, windowsHide: true });
+    await run(["init"]);
+    await run(["config", "user.email", "t@example.com"]);
+    await run(["config", "user.name", "t"]);
+    await mkdir(path.join(dir, "pkg", "src"), { recursive: true });
+    await mkdir(path.join(dir, "other"), { recursive: true });
+    await writeFile(path.join(dir, "pkg", "src", "committed.ts"), "const a = 1;\n");
+    await writeFile(path.join(dir, "other", "x.ts"), "const x = 1;\n");
+    await run(["add", "."]);
+    await run(["commit", "-m", "init"]);
+
+    // Change a file inside the subdir, add an untracked one there, and touch a
+    // sibling-dir file that must NOT show up when scanning the subdir.
+    await writeFile(path.join(dir, "pkg", "src", "committed.ts"), "const a = 2;\n");
+    await writeFile(path.join(dir, "pkg", "src", "new.ts"), "const b = 2;\n");
+    await writeFile(path.join(dir, "other", "x.ts"), "const x = 2;\n");
+
+    const subRoot = path.join(dir, "pkg");
+    const changed = await changedFiles(subRoot);
+
+    // Paths are relative to the subdir root (so scan() can join them), NOT
+    // repo-root-relative ("pkg/src/...") — that was the silent-empty bug.
+    assert.ok(changed.includes("src/committed.ts"), "modified file relative to subdir");
+    assert.ok(changed.includes("src/new.ts"), "untracked file relative to subdir");
+    assert.ok(
+      !changed.some((f) => f.startsWith("pkg/") || f.includes("other/")),
+      "no repo-root-relative or sibling-dir paths leak in",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

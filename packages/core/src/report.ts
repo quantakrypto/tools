@@ -3,8 +3,9 @@
  * or a human-readable text summary. No third-party dependencies — ANSI colour
  * is emitted with raw escape codes and is off by default.
  */
-import type { ScanResult, Severity } from "./types.js";
+import type { Finding, ScanResult, Severity } from "./types.js";
 import { VERSION } from "./version.js";
+import { SEVERITY_ORDER, sarifLevel } from "./severity.js";
 
 /** Minimal SARIF 2.1.0 log shape (kept permissive on purpose). */
 export interface SarifLog {
@@ -13,22 +14,30 @@ export interface SarifLog {
   runs: unknown[];
 }
 
+/** Options shared by the structured reporters ({@link toSarif} / {@link toJson}). */
+export interface ReportOptions {
+  /**
+   * Omit `location.snippet` from every finding in the output. Defaults to false
+   * (snippets are included). Snippets of `sensitive` findings (e.g. PEM key
+   * blocks, SSH public keys) are ALWAYS omitted regardless of this flag — the
+   * snippet there IS the sensitive value.
+   */
+  redactSnippets?: boolean;
+}
+
 const SARIF_SCHEMA =
   "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json";
 
 const INFORMATION_URI = "https://github.com/quantakrypto/tools";
 
-/** Map our severity to a SARIF result level. */
-function sarifLevel(severity: Severity): "error" | "warning" | "note" {
-  switch (severity) {
-    case "critical":
-    case "high":
-      return "error";
-    case "medium":
-      return "warning";
-    default:
-      return "note";
-  }
+/**
+ * Resolve the snippet to emit for a finding, honouring redaction. Sensitive
+ * findings (key material) never expose their snippet; otherwise the snippet is
+ * dropped only when `redactSnippets` is set.
+ */
+function emittedSnippet(f: Finding, redactSnippets: boolean): string | undefined {
+  if (redactSnippets || f.sensitive) return undefined;
+  return f.location.snippet;
 }
 
 /** Map our severity to a SARIF rule-level default (used in rules[].defaultConfiguration). */
@@ -48,7 +57,8 @@ function sarifRank(severity: Severity): number {
 }
 
 /** Serialize a scan result as SARIF 2.1.0. */
-export function toSarif(result: ScanResult): SarifLog {
+export function toSarif(result: ScanResult, opts?: ReportOptions): SarifLog {
+  const redactSnippets = opts?.redactSnippets ?? false;
   // Build the unique rule set (one rule per ruleId encountered) and collect the
   // set of CWE taxa referenced by any rule.
   const ruleIndex = new Map<string, number>();
@@ -86,6 +96,7 @@ export function toSarif(result: ScanResult): SarifLog {
     const region: Record<string, number> = { startLine: f.location.line };
     if (typeof f.location.column === "number") region.startColumn = f.location.column;
     if (typeof f.location.endLine === "number") region.endLine = f.location.endLine;
+    const snippet = emittedSnippet(f, redactSnippets);
 
     return {
       ruleId: f.ruleId,
@@ -116,7 +127,7 @@ export function toSarif(result: ScanResult): SarifLog {
             artifactLocation: { uri: f.location.file },
             region: {
               ...region,
-              ...(f.location.snippet ? { snippet: { text: f.location.snippet } } : {}),
+              ...(snippet ? { snippet: { text: snippet } } : {}),
             },
           },
         },
@@ -178,7 +189,8 @@ function securitySeverity(severity: Severity): string {
 }
 
 /** Serialize a scan result as a plain JSON-friendly object. */
-export function toJson(result: ScanResult): Record<string, unknown> {
+export function toJson(result: ScanResult, opts?: ReportOptions): Record<string, unknown> {
+  const redactSnippets = opts?.redactSnippets ?? false;
   return {
     toolVersion: result.toolVersion,
     root: result.root,
@@ -208,7 +220,7 @@ export function toJson(result: ScanResult): Record<string, unknown> {
         line: f.location.line,
         column: f.location.column,
         endLine: f.location.endLine,
-        snippet: f.location.snippet,
+        snippet: emittedSnippet(f, redactSnippets),
       },
     })),
   };
@@ -230,9 +242,6 @@ const ANSI = {
   magenta: "\x1b[35m",
   cyan: "\x1b[36m",
 } as const;
-
-/** Severity ordering for grouping / sorting, most → least severe. */
-const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info"];
 
 function severityColor(sev: Severity): string {
   switch (sev) {
