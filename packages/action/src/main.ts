@@ -14,26 +14,32 @@
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { applyBaseline, fingerprintFinding, loadBaseline } from "@quantakrypto/core";
-import type { Baseline, Finding, ScanResult, Severity } from "@quantakrypto/core";
-import { renderReport, runQscan } from "@quantakrypto/qscan";
+import {
+  applyBaseline,
+  fingerprintFinding,
+  loadBaseline,
+  meetsThreshold,
+  SEVERITY_ORDER,
+  toJson,
+  toSarif,
+} from "@quantakrypto/core";
+import type { Baseline, Finding, ReportOptions, ScanResult, Severity } from "@quantakrypto/core";
+import { runQscan } from "@quantakrypto/qscan";
 
 import {
   error as annotateError,
   getBooleanInput,
   getInput,
   info,
+  notice,
   setFailed,
   setOutput,
   warning,
 } from "./io.js";
 import { mdCell } from "./escape.js";
-
-/** Severity ordering, most → least severe. Lower index = more severe. */
-const SEVERITY_ORDER: readonly Severity[] = ["critical", "high", "medium", "low", "info"];
 
 /** Default report file when the `output` input is omitted. */
 const DEFAULT_OUTPUT = "quantakrypto.sarif.json";
@@ -48,6 +54,7 @@ export interface ActionInputs {
   baseline?: string;
   commentPr: boolean;
   githubToken?: string;
+  redactSnippets: boolean;
 }
 
 /** Parse + validate the action's inputs from the environment. Pure given `env`. */
@@ -73,13 +80,35 @@ export function readInputs(env: NodeJS.ProcessEnv = process.env): ActionInputs {
     baseline: baseline || undefined,
     commentPr: getBooleanInput("comment-pr", false, env),
     githubToken: githubToken || undefined,
+    redactSnippets: getBooleanInput("redact-snippets", false, env),
   };
 }
 
-/** True when `severity` is at least as severe as `threshold`. */
-export function meetsThreshold(severity: Severity, threshold: Severity): boolean {
-  return SEVERITY_ORDER.indexOf(severity) <= SEVERITY_ORDER.indexOf(threshold);
+/**
+ * Render the scan result in the requested format, honouring `redactSnippets`.
+ *
+ * We call core's `toSarif`/`toJson` directly (rather than qScan's `renderReport`,
+ * which does not yet thread report options) so the `redact-snippets` input can
+ * drop `location.snippet` from the written report. The serialized shape is
+ * identical to qScan's — both delegate to the same core serializers.
+ */
+function renderReportWithOptions(
+  result: ScanResult,
+  format: "sarif" | "json",
+  opts: ReportOptions,
+): string {
+  const doc = format === "sarif" ? toSarif(result, opts) : toJson(result, opts);
+  return JSON.stringify(doc, null, 2);
 }
+
+/**
+ * True when `severity` is at least as severe as `threshold`.
+ *
+ * Re-exported from `@quantakrypto/core` so the Action, the CLI and the SARIF
+ * level mapping all agree on what "at or above a threshold" means (previously
+ * this was a duplicated local definition).
+ */
+export { meetsThreshold };
 
 /**
  * A stable identity for a finding, used to match it against a baseline.
@@ -125,6 +154,7 @@ export function annotateFindings(findings: Finding[], threshold: Severity): void
       endLine: f.location.endLine,
     };
     if (level === "error") annotateError(message, props);
+    else if (level === "notice") notice(message, props);
     else warning(message, props);
   }
 }
@@ -232,11 +262,23 @@ export async function commentOnPullRequest(
   }
 }
 
-/** Resolve a possibly-relative path against the GitHub workspace (or cwd). */
+/**
+ * Resolve a possibly-relative path against the GitHub workspace (or cwd).
+ *
+ * The `output`/`baseline` inputs are workflow-author-supplied but flow into
+ * `writeFile`/`readFile`, so a relative `../../etc/...` (or a crafted absolute
+ * path) must not be allowed to escape the workspace and read/write arbitrary
+ * files on the runner. We resolve the path and assert it stays inside
+ * `resolve(workspace) + sep`, throwing otherwise.
+ */
 function resolveInWorkspace(p: string, env: NodeJS.ProcessEnv): string {
-  if (isAbsolute(p)) return p;
-  const workspace = env["GITHUB_WORKSPACE"] || process.cwd();
-  return join(workspace, p);
+  const workspace = resolve(env["GITHUB_WORKSPACE"] || process.cwd());
+  const resolved = isAbsolute(p) ? resolve(p) : resolve(workspace, p);
+  // The workspace itself is allowed; anything below it must sit under "<ws>/".
+  if (resolved !== workspace && !resolved.startsWith(workspace + sep)) {
+    throw new Error(`path "${p}" escapes the workspace (${workspace})`);
+  }
+  return resolved;
 }
 
 /**
@@ -274,9 +316,16 @@ export async function run(env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const { newFindings } = applyBaseline(result.findings, baseline);
 
   // Write the report (SARIF for code scanning, or JSON) to the output path.
+  // `redact-snippets` drops `location.snippet` from every finding (sensitive
+  // findings are redacted regardless) so the report can be uploaded to code
+  // scanning without leaking matched source.
   const outputPath = resolveInWorkspace(inputs.output, env);
   await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, renderReport(result, inputs.format), "utf8");
+  await writeFile(
+    outputPath,
+    renderReportWithOptions(result, inputs.format, { redactSnippets: inputs.redactSnippets }),
+    "utf8",
+  );
   info(`quantakrypto: wrote ${inputs.format} report to ${inputs.output}`);
 
   // Annotate findings inline in the diff.

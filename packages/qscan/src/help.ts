@@ -38,10 +38,12 @@ OPTIONS
   --changed                     Scan only files changed in the git work tree
   --since <git-ref>             With --changed, diff against <git-ref>
   --parallel                    Scan using a worker-thread pool when worthwhile
-  --concurrency <n>             Worker count for --parallel (implies --parallel)
+  --concurrency <n>             Worker count for --parallel (implies --parallel);
+                                0 forces the in-process serial path
   --baseline <file>             Suppress findings listed in a baseline file
   --write-baseline <file>       Write current findings as a baseline, then exit 0
   --quiet                       Suppress the human summary banner
+  --no-snippets                 Omit code snippets from the json/sarif report
   -v, --version                 Print version and exit
   -h, --help                    Print this help and exit
 

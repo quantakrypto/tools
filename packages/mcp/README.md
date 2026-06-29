@@ -160,9 +160,21 @@ is reachable by untrusted peers:
   only when `QUANTAKRYPTO_MCP_ALLOW_FS=1`. The knowledge tools (`explain_finding`,
   `suggest_hybrid`, `list_rules`) are always available. `tools/list` and
   `tools/call` both reflect the gating.
-- **Limits.** A 1 MiB request-body cap (always), a per-request tool timeout
-  (`QUANTAKRYPTO_MCP_TIMEOUT_MS`, default 30000 → `504` on timeout) and a response-size
-  cap (`QUANTAKRYPTO_MCP_MAX_RESPONSE_BYTES`, default 4 MiB).
+- **Filesystem tools are root-confined.** Even with `QUANTAKRYPTO_MCP_ALLOW_FS=1`,
+  every scanned path must resolve inside the `QUANTAKRYPTO_MCP_ROOT` allow-list
+  (`:`-separated; the process CWD by default). `..` traversal and out-of-root
+  absolute paths (e.g. `/etc/passwd`) are rejected — the server is not an
+  arbitrary-file-read oracle.
+- **Origin validation.** `POST /mcp` rejects a browser request whose `Origin`
+  host is not loopback (or allow-listed via `QUANTAKRYPTO_MCP_ALLOW_ORIGIN`),
+  defending the default no-token loopback config against DNS-rebinding /
+  localhost-CSRF. Non-browser clients (no `Origin`) are unaffected.
+- **Limits + work budgets.** A 1 MiB request-body cap (`413` only on the cap,
+  `400` on a transport error), a per-request tool timeout that **aborts the
+  underlying scan** (`QUANTAKRYPTO_MCP_TIMEOUT_MS`, default 30000 → `504`), a
+  response-size cap (`QUANTAKRYPTO_MCP_MAX_RESPONSE_BYTES`, default 4 MiB), and
+  per-scan work budgets (`QUANTAKRYPTO_MCP_MAX_FILES` / `QUANTAKRYPTO_MCP_MAX_BYTES`)
+  so a single call cannot exhaust host resources.
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
@@ -170,8 +182,12 @@ is reachable by untrusted peers:
 | `PORT` | `3000` | Listen port. |
 | `QUANTAKRYPTO_MCP_TOKEN` | _(unset)_ | When set, requires `Authorization: Bearer <token>`. |
 | `QUANTAKRYPTO_MCP_ALLOW_FS` | _(off)_ | `1`/`true` exposes the filesystem tools over HTTP. |
-| `QUANTAKRYPTO_MCP_TIMEOUT_MS` | `30000` | Per-request tool-execution deadline. |
+| `QUANTAKRYPTO_MCP_ROOT` | _(cwd)_ | `:`-separated allow-list of directories the FS tools may scan. |
+| `QUANTAKRYPTO_MCP_ALLOW_ORIGIN` | _(loopback)_ | Comma-separated extra `Origin` hosts allowed on `/mcp`. |
+| `QUANTAKRYPTO_MCP_TIMEOUT_MS` | `30000` | Per-request deadline; aborts the in-flight scan on timeout. |
 | `QUANTAKRYPTO_MCP_MAX_RESPONSE_BYTES` | `4194304` | Response-body size cap. |
+| `QUANTAKRYPTO_MCP_MAX_FILES` | `25000` (cap `250000`) | Max files a single scan may read. |
+| `QUANTAKRYPTO_MCP_MAX_BYTES` | `268435456` (cap 2 GiB) | Max cumulative bytes a single scan may read. |
 
 ```bash
 # Local, knowledge tools only (default safe posture)

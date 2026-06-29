@@ -148,10 +148,27 @@ export interface ToolDescriptor {
   inputSchema: JsonSchema;
 }
 
+/**
+ * Per-call context threaded from the transport into a tool handler. Carries the
+ * cooperative-cancellation signal so a long-running tool (e.g. a filesystem
+ * scan) can be aborted when the transport's request deadline fires, instead of
+ * leaking unbounded background work after a 504/timeout.
+ */
+export interface ToolContext {
+  /** Fires when the caller's request deadline elapses; abort in-flight work. */
+  signal?: AbortSignal;
+}
+
 /** A registered tool: descriptor plus its async handler. */
 export interface ToolDefinition extends ToolDescriptor {
-  /** Executes the tool with already-parsed arguments. */
-  handler: (args: Record<string, unknown>) => Promise<ToolResult> | ToolResult;
+  /**
+   * Executes the tool with already-parsed arguments and an optional per-call
+   * {@link ToolContext} (e.g. an `AbortSignal` for the request deadline).
+   */
+  handler: (
+    args: Record<string, unknown>,
+    context?: ToolContext,
+  ) => Promise<ToolResult> | ToolResult;
 }
 
 /** Convenience: wrap one or more strings as a non-error text tool result. */

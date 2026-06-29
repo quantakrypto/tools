@@ -1,10 +1,37 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { applyBaseline, fingerprintFinding } from "@quantakrypto/core";
 import type { Baseline, Finding, ScanResult } from "@quantakrypto/core";
 
-import { buildSummary, fingerprint, meetsThreshold, readInputs, shouldFail } from "../src/main.js";
+import {
+  annotateFindings,
+  buildSummary,
+  fingerprint,
+  meetsThreshold,
+  readInputs,
+  run,
+  shouldFail,
+} from "../src/main.js";
+
+/** Run `fn` with `process.stdout.write` captured; return the written text. */
+function captureStdout(fn: () => void): string {
+  const original = process.stdout.write.bind(process.stdout);
+  let buf = "";
+  process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+    buf += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    fn();
+  } finally {
+    process.stdout.write = original;
+  }
+  return buf;
+}
 
 /** Build a Finding with sensible defaults for tests. */
 function makeFinding(over: Partial<Finding> = {}): Finding {
@@ -224,4 +251,110 @@ test("buildSummary: a backslash before a pipe cannot un-escape the delimiter", (
   assert.ok(row);
   const unescapedPipes = (row.match(/(?<!\\)\|/g) ?? []).length;
   assert.equal(unescapedPipes, 5);
+});
+
+// ---------------------------------------------------------------------------
+// A2: an `info` finding (below every threshold) must annotate as a `notice`,
+// not a `warning`. Previously the two-way error/warning split swallowed the
+// dead `notice` branch and routed info findings to ::warning::.
+// ---------------------------------------------------------------------------
+
+test("annotateFindings routes an info finding to ::notice:: (not ::warning::)", () => {
+  const f = makeFinding({
+    severity: "info",
+    hndl: false,
+    message: "informational note",
+    remediation: undefined,
+    location: { file: "src/info.ts", line: 7 },
+  });
+  // threshold "high": the info finding is below it, so it takes the
+  // annotationLevel path, which is "notice".
+  const out = captureStdout(() => annotateFindings([f], "high"));
+  assert.match(out, /^::notice .*::informational note$/m);
+  assert.doesNotMatch(out, /::warning /);
+  assert.doesNotMatch(out, /::error /);
+});
+
+test("annotateFindings still uses ::error:: for blocking and ::warning:: for medium/low", () => {
+  const high = makeFinding({ severity: "high", message: "blocking", remediation: undefined });
+  const low = makeFinding({
+    severity: "low",
+    message: "minor",
+    remediation: undefined,
+    location: { file: "x.ts", line: 1 },
+  });
+  const out = captureStdout(() => annotateFindings([high, low], "high"));
+  assert.match(out, /::error .*::blocking/);
+  assert.match(out, /::warning .*::minor/);
+});
+
+// ---------------------------------------------------------------------------
+// A3: resolveInWorkspace (used for output/baseline) must keep paths inside the
+// workspace. A "../../x" input must be rejected rather than escaping the tree.
+// resolveInWorkspace is internal, so we exercise it through run()/readInputs.
+// ---------------------------------------------------------------------------
+
+test("run rejects an output path that escapes the workspace via ../", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "quantakrypto-ws-"));
+  const env: NodeJS.ProcessEnv = {
+    GITHUB_WORKSPACE: ws,
+    INPUT_PATH: ".",
+    INPUT_OUTPUT: "../../escape.sarif.json",
+    "INPUT_FAIL-ON-FINDINGS": "false",
+  };
+  await assert.rejects(() => run(env), /escapes the workspace/);
+});
+
+test("run rejects a baseline path that escapes the workspace via ../", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "quantakrypto-ws-"));
+  const env: NodeJS.ProcessEnv = {
+    GITHUB_WORKSPACE: ws,
+    INPUT_PATH: ".",
+    INPUT_BASELINE: "../../../etc/passwd",
+    "INPUT_FAIL-ON-FINDINGS": "false",
+  };
+  await assert.rejects(() => run(env), /escapes the workspace/);
+});
+
+// ---------------------------------------------------------------------------
+// A5: the `redact-snippets` input is parsed and honored end-to-end — when set,
+// the written report carries no matched source snippet.
+// ---------------------------------------------------------------------------
+
+test("readInputs parses redact-snippets (default false)", () => {
+  assert.equal(readInputs({}).redactSnippets, false);
+  assert.equal(readInputs({ "INPUT_REDACT-SNIPPETS": "true" }).redactSnippets, true);
+  assert.equal(readInputs({ "INPUT_REDACT-SNIPPETS": "false" }).redactSnippets, false);
+});
+
+test("run honors redact-snippets: snippet text is omitted from the written report", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "quantakrypto-ws-"));
+  // A file with detectable, quantum-vulnerable crypto whose snippet is unique.
+  const marker = "generateKeyPairSync";
+  writeFileSync(
+    join(ws, "crypto.ts"),
+    `import { ${marker} } from "node:crypto";\nconst kp = ${marker}("rsa", { modulusLength: 2048 });\n`,
+  );
+
+  // 1) Without redaction the snippet text appears in the report.
+  const plainEnv: NodeJS.ProcessEnv = {
+    GITHUB_WORKSPACE: ws,
+    INPUT_PATH: ".",
+    INPUT_FORMAT: "sarif",
+    INPUT_OUTPUT: "plain.sarif.json",
+    "INPUT_FAIL-ON-FINDINGS": "false",
+  };
+  await run(plainEnv);
+  const plain = readFileSync(join(ws, "plain.sarif.json"), "utf8");
+  assert.ok(plain.includes(marker), "expected the snippet text in the unredacted report");
+
+  // 2) With redact-snippets=true the snippet text is gone.
+  const redactedEnv: NodeJS.ProcessEnv = {
+    ...plainEnv,
+    INPUT_OUTPUT: "redacted.sarif.json",
+    "INPUT_REDACT-SNIPPETS": "true",
+  };
+  await run(redactedEnv);
+  const redacted = readFileSync(join(ws, "redacted.sarif.json"), "utf8");
+  assert.ok(!redacted.includes(marker), "expected the snippet text to be redacted out");
 });

@@ -147,6 +147,16 @@ interface Pending {
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+/** Cap on retained stderr (and sidelined-stdout notes): most recent 64 KiB. */
+const STDERR_CAP = 1 << 16;
+
+/**
+ * Largest stdout line we will buffer/decode (64 KiB). A protocol response is
+ * tiny; a longer line is a misbehaving or non-protocol SUT, so we sideline it
+ * rather than buffer it without bound. Mirrors the stderr cap.
+ */
+const MAX_STDOUT_LINE = 1 << 16;
+
 /**
  * A long-lived handle to a spawned SUT. Construct once per test run, issue many
  * requests, then `close()`. Requests are matched to responses by `id`, so the
@@ -161,8 +171,10 @@ export class Runner {
   private stderrBuf = "";
   private closed = false;
   private fatal: Error | undefined;
+  private readonly onStderr?: (line: string) => void;
 
   constructor(opts: RunnerOptions) {
+    this.onStderr = opts.onStderr;
     if (opts.command.length === 0) {
       throw new Error("Runner: command must have at least one element");
     }
@@ -190,17 +202,19 @@ export class Runner {
     this.child.stderr.setEncoding("utf8");
     this.child.stderr.on("data", (chunk: string) => {
       this.stderrBuf += chunk;
-      if (this.stderrBuf.length > 1 << 16) {
-        this.stderrBuf = this.stderrBuf.slice(-(1 << 16));
+      if (this.stderrBuf.length > STDERR_CAP) {
+        this.stderrBuf = this.stderrBuf.slice(-STDERR_CAP);
       }
-      if (opts.onStderr) {
+      if (this.onStderr) {
         for (const line of chunk.split("\n")) {
-          if (line.length > 0) opts.onStderr(line);
+          if (line.length > 0) this.onStderr(line);
         }
       }
     });
 
-    this.rl = createInterface({ input: this.child.stdout });
+    this.child.stdout.setEncoding("utf8");
+    // crlfDelay groups CRLF; the byte cap is enforced per-line in onLine.
+    this.rl = createInterface({ input: this.child.stdout, crlfDelay: Infinity });
     this.rl.on("line", (line) => this.onLine(line));
   }
 
@@ -211,14 +225,23 @@ export class Runner {
 
   private onLine(line: string): void {
     if (line.trim().length === 0) return;
+    // Cap the line we attempt to decode, mirroring the stderr cap. A SUT that
+    // streams an unbounded line (or never emits a newline) must not let us
+    // buffer it without limit before we sideline it as noise.
+    if (line.length > MAX_STDOUT_LINE) {
+      this.sidelineStdout(`SUT stdout line exceeded ${MAX_STDOUT_LINE} bytes; ignored`);
+      return;
+    }
     let resp: Response;
     try {
       resp = decodeResponse(line);
     } catch (err) {
-      // A protocol violation on a line we can't correlate is fatal; if we can
-      // extract an id, fail just that request, else fail everything.
+      // An undecodable stdout line is NOT fatal: a SUT may legitimately print a
+      // banner, log line, or progress note to stdout. We sideline it (surface it
+      // via stderr/log) and keep going. Only a process `exit`/`error` poisons the
+      // runner via failAll — a stray line must not abort an otherwise-valid run.
       const pe = err as ProtocolError;
-      this.failAll(pe);
+      this.sidelineStdout(`ignored non-protocol stdout line: ${pe.message}`);
       return;
     }
     const entry = this.pending.get(resp.id);
@@ -229,6 +252,20 @@ export class Runner {
     clearTimeout(entry.timer);
     this.pending.delete(resp.id);
     entry.resolve(resp);
+  }
+
+  /**
+   * Record a stdout line we could not use (non-protocol banner, oversize line,
+   * etc.). It is surfaced through the stderr buffer and the `onStderr` sink for
+   * diagnostics, but never fails any request — see the `onLine` rationale.
+   */
+  private sidelineStdout(detail: string): void {
+    const note = `[sieve] ${detail}`;
+    this.stderrBuf += note + "\n";
+    if (this.stderrBuf.length > STDERR_CAP) {
+      this.stderrBuf = this.stderrBuf.slice(-STDERR_CAP);
+    }
+    if (this.onStderr) this.onStderr(note);
   }
 
   private failAll(err: Error): void {

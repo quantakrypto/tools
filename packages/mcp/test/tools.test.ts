@@ -11,24 +11,56 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import process from "node:process";
+import { mkdtempSync, writeFileSync, rmSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { createQuantakryptoServer } from "../src/index.js";
-import type { JsonRpcSuccess } from "../src/protocol.js";
+import type { JsonRpcSuccess, ToolContext } from "../src/protocol.js";
 
 interface ToolCallResult {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
 }
 
+/** Run `fn` with `vars` applied to process.env, restoring the prior values. */
+async function withEnv(
+  vars: Record<string, string | undefined>,
+  fn: () => Promise<void>,
+): Promise<void> {
+  const prev: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(vars)) {
+    prev[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    await fn();
+  } finally {
+    for (const [k, v] of Object.entries(prev)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
 /** Call a tool and return its (validated) ToolResult. */
-async function callTool(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
+async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  context?: ToolContext,
+): Promise<ToolCallResult> {
   const server = createQuantakryptoServer();
-  const res = await server.handle({
-    jsonrpc: "2.0",
-    id: 1,
-    method: "tools/call",
-    params: { name, arguments: args },
-  });
+  const res = await server.handle(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name, arguments: args },
+    },
+    context,
+  );
 
   assert.ok(
     res && "result" in (res as object),
@@ -164,4 +196,107 @@ test("generate_cbom requires a path argument", async () => {
   const result = await callTool("generate_cbom", {});
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /path/i);
+});
+
+/* ------------------------- FS confinement (P0) ---------------------------- */
+
+test("scan_path rejects an out-of-root absolute path (no arbitrary read)", async () => {
+  // With the default root = cwd (packages/mcp), /etc/passwd is outside the
+  // allow-list and must be refused BEFORE scan() ever touches the filesystem.
+  await withEnv({ QUANTAKRYPTO_MCP_ROOT: undefined }, async () => {
+    const result = await callTool("scan_path", { path: "/etc/passwd" });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /rejected|outside the configured scan root|allow-list/i);
+    // The rejection must not leak the literal target path.
+    assert.doesNotMatch(result.content[0].text, /\/etc\/passwd/);
+  });
+});
+
+test("scan_path rejects a `..` traversal escaping the root", async () => {
+  await withEnv({ QUANTAKRYPTO_MCP_ROOT: process.cwd() }, async () => {
+    const result = await callTool("scan_path", { path: "../../../../etc/passwd" });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /rejected|outside the configured scan root/i);
+  });
+});
+
+test("inventory_crypto and generate_cbom enforce the same confinement", async () => {
+  await withEnv({ QUANTAKRYPTO_MCP_ROOT: process.cwd() }, async () => {
+    for (const tool of ["inventory_crypto", "generate_cbom"]) {
+      const result = await callTool(tool, { path: "/etc/shadow" });
+      assert.equal(result.isError, true, `${tool} must reject out-of-root`);
+      assert.match(result.content[0].text, /rejected|outside the configured scan root/i);
+    }
+  });
+});
+
+/**
+ * Run `fn` with a throwaway temp directory as the MCP FS root, seeded with
+ * `files`. CWD-independent, so these pass both per-workspace and in the
+ * combined coverage run (which executes from the repo root).
+ */
+async function withFixtureRoot(
+  files: Record<string, string>,
+  extraEnv: Record<string, string | undefined>,
+  fn: (root: string) => Promise<void>,
+): Promise<void> {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "qk-mcp-fix-")));
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(root, name), content);
+  try {
+    await withEnv({ QUANTAKRYPTO_MCP_ROOT: root, ...extraEnv }, () => fn(root));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("scan_path allows an in-root path and returns a summary", async () => {
+  await withFixtureRoot(
+    { "a.ts": "const k = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });\n" },
+    {},
+    async (root) => {
+      const result = await callTool("scan_path", { path: root });
+      assert.notEqual(result.isError, true);
+      const text = result.content.map((c) => c.text).join("\n");
+      assert.match(text, /scan of|Files scanned/i);
+    },
+  );
+});
+
+/* ----------------------- work budget + abort (P0) ------------------------- */
+
+test("scan_path surfaces a budget overflow as an error, not a hang", async () => {
+  // Three files with a maxFiles budget of 1 makes core throw BudgetExceededError
+  // mid-walk, which the tool maps to a readable isError result, not a hang.
+  await withFixtureRoot(
+    { "a.ts": "// one\n", "b.ts": "// two\n", "c.ts": "// three\n" },
+    { QUANTAKRYPTO_MCP_MAX_FILES: "1" },
+    async (root) => {
+      const result = await callTool("scan_path", { path: root });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /budget exceeded/i);
+    },
+  );
+});
+
+test("scan_path aborts the scan when the request signal fires", async () => {
+  // A pre-aborted signal (as the HTTP timeout would set) makes core throw
+  // AbortError; the tool maps it to a clean, generic error result — no hang.
+  await withFixtureRoot({ "a.ts": "// one\n" }, {}, async (root) => {
+    const result = await callTool("scan_path", { path: root }, { signal: AbortSignal.abort() });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /aborted|timed out/i);
+  });
+});
+
+/* --------------------------- error sanitization --------------------------- */
+
+test("describeError sanitizes an arbitrary error but preserves intentional ones", async () => {
+  const { __test } = await import("../src/tools.js");
+  // A raw I/O-style error message (with a host path) is replaced generically.
+  const leaky = __test.describeError(
+    "scan",
+    new Error("ENOENT: no such file or directory, open '/etc/shadow'"),
+  );
+  assert.doesNotMatch(leaky, /\/etc\/shadow/);
+  assert.match(leaky, /internal error occurred/i);
 });

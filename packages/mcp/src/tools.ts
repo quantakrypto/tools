@@ -8,8 +8,12 @@
  * protocol-level crash. When core lands, the tools work unchanged.
  */
 
+import process from "node:process";
+
 import {
   VERSION,
+  AbortError,
+  BudgetExceededError,
   buildInventory,
   detectors,
   remediationFor,
@@ -20,13 +24,15 @@ import type {
   AlgorithmFamily,
   CryptoInventory,
   Remediation,
+  ScanOptions,
   ScanResult,
   Severity,
 } from "@quantakrypto/core";
 
 import { errorResult, textResult } from "./protocol.js";
-import type { JsonSchema, ToolDefinition, ToolResult } from "./protocol.js";
+import type { JsonSchema, ToolContext, ToolDefinition, ToolResult } from "./protocol.js";
 import { resolveRule } from "./rules.js";
+import { resolveFsConfig, resolveScanPath } from "./fsconfig.js";
 
 /** Severity order for stable, human-friendly summaries. */
 const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info"];
@@ -45,8 +51,27 @@ const ALGORITHM_FAMILIES: AlgorithmFamily[] = [
 ];
 
 /**
+ * Map a core failure to a caller-safe message. Cancellation and budget overflows
+ * are intentional, expected outcomes — their messages are author-controlled and
+ * carry no host detail, so they pass through. Every other error may embed a
+ * server path (an `ENOENT … '/etc/shadow'`, a stack), so it is logged locally
+ * and replaced with a generic string; the remote caller never sees internals.
+ */
+function describeError(label: string, err: unknown): string {
+  if (err instanceof AbortError) return `${label} was aborted (request timed out).`;
+  if (err instanceof BudgetExceededError) {
+    // Author-written, no host detail: "maxFiles budget exceeded (limit: …)".
+    return `${label} failed: ${err.message}`;
+  }
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  process.stderr.write(`quantakrypto MCP: ${label} failed: ${detail}\n`);
+  return `${label} failed: an internal error occurred.`;
+}
+
+/**
  * Run a possibly-throwing core call, mapping any failure to an error tool
- * result. Returns either the value or a {@link ToolResult} sentinel.
+ * result. Returns either the value or a {@link ToolResult} sentinel. Error
+ * messages are sanitized via {@link describeError} so server paths never leak.
  */
 async function safe<T>(
   label: string,
@@ -55,9 +80,38 @@ async function safe<T>(
   try {
     return { ok: true, value: await fn() };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    return { ok: false, result: errorResult(`${label} failed: ${detail}`) };
+    return { ok: false, result: errorResult(describeError(label, err)) };
   }
+}
+
+/**
+ * Resolve the FS-tool policy (root allow-list + work budgets) once per call from
+ * the live environment, then validate the caller's path against it and assemble
+ * the {@link ScanOptions} for a confined, bounded, cancellable scan.
+ *
+ * Returns an `errorResult` when the path escapes the allow-list (a `..`
+ * traversal or an out-of-root absolute path), so the FS tools can `return` it
+ * directly. The `signal` from the transport's request deadline (when present) is
+ * threaded in so a timed-out request actually aborts the underlying scan.
+ */
+function buildScanOptions(
+  requested: string,
+  context?: ToolContext,
+): { ok: true; options: ScanOptions } | { ok: false; result: ToolResult } {
+  const config = resolveFsConfig(process.env);
+  const decision = resolveScanPath(config, requested);
+  if (!decision.ok) {
+    return { ok: false, result: errorResult(`scan rejected: ${decision.reason}`) };
+  }
+  return {
+    ok: true,
+    options: {
+      root: decision.path,
+      signal: context?.signal,
+      maxFiles: config.maxFiles,
+      maxBytes: config.maxBytes,
+    },
+  };
 }
 
 /** Map a free-text algorithm string onto a known {@link AlgorithmFamily}. */
@@ -145,13 +199,15 @@ const scanPathTool: ToolDefinition = {
     required: ["path"],
     additionalProperties: false,
   },
-  async handler(args): Promise<ToolResult> {
+  async handler(args, context): Promise<ToolResult> {
     const path = args.path;
     if (typeof path !== "string" || path.length === 0) {
       return errorResult("scan_path requires a non-empty 'path' string.");
     }
     const format = args.format === "json" ? "json" : "summary";
-    const scanned = await safe("scan", () => scan({ root: path }));
+    const opts = buildScanOptions(path, context);
+    if (!opts.ok) return opts.result;
+    const scanned = await safe("scan", () => scan(opts.options));
     if (!scanned.ok) return scanned.result;
     const result = scanned.value;
     if (format === "json") {
@@ -177,12 +233,14 @@ const inventoryCryptoTool: ToolDefinition = {
     required: ["path"],
     additionalProperties: false,
   },
-  async handler(args): Promise<ToolResult> {
+  async handler(args, context): Promise<ToolResult> {
     const path = args.path;
     if (typeof path !== "string" || path.length === 0) {
       return errorResult("inventory_crypto requires a non-empty 'path' string.");
     }
-    const scanned = await safe("scan", () => scan({ root: path }));
+    const opts = buildScanOptions(path, context);
+    if (!opts.ok) return opts.result;
+    const scanned = await safe("scan", () => scan(opts.options));
     if (!scanned.ok) return scanned.result;
     const result = scanned.value;
 
@@ -428,12 +486,14 @@ const generateCbomTool: ToolDefinition = {
     required: ["path"],
     additionalProperties: false,
   },
-  async handler(args): Promise<ToolResult> {
+  async handler(args, context): Promise<ToolResult> {
     const path = args.path;
     if (typeof path !== "string" || path.length === 0) {
       return errorResult("generate_cbom requires a non-empty 'path' string.");
     }
-    const scanned = await safe("scan", () => scan({ root: path }));
+    const opts = buildScanOptions(path, context);
+    if (!opts.ok) return opts.result;
+    const scanned = await safe("scan", () => scan(opts.options));
     if (!scanned.ok) return scanned.result;
     const cbom = await safe("toCbom", () => toCbom(scanned.value));
     if (!cbom.ok) return cbom.result;
@@ -463,7 +523,13 @@ export const quantakryptoTools: ToolDefinition[] = [
 export const CORE_VERSION = VERSION;
 
 /** Exposed for tests and advanced callers. */
-export const __test = { normalizeAlgorithm, summarizeScan, staticHybridAdvice };
+export const __test = {
+  normalizeAlgorithm,
+  summarizeScan,
+  staticHybridAdvice,
+  buildScanOptions,
+  describeError,
+};
 
 /** Keep the schema type imported and referenced (documentation aid). */
 export type ToolInputSchema = JsonSchema;

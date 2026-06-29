@@ -11,9 +11,8 @@
  * serialized shape stays consistent across every tool in the monorepo.
  */
 
-import { toCbom, toJson, toSarif } from "@quantakrypto/core";
-import type { Finding, ScanResult, Severity } from "@quantakrypto/core";
-import { SEVERITY_ORDER, severityRank } from "./args.js";
+import { SEVERITY_ORDER, severityRank, toCbom, toJson, toSarif } from "@quantakrypto/core";
+import type { Finding, ReportOptions, ScanResult, Severity } from "@quantakrypto/core";
 
 /** Minimal ANSI palette. Empty strings when color is disabled. */
 interface Palette {
@@ -40,30 +39,22 @@ const COLOR: Palette = {
 /**
  * Render the JSON report (pretty-printed, no trailing newline).
  *
- * Delegates to core's `toJson` for a monorepo-consistent shape. If the running
- * core build has not implemented the serializer yet, falls back to emitting the
- * `ScanResult` directly (which is already JSON-friendly) so reports never break.
+ * Delegates to core's `toJson` for a monorepo-consistent shape. `opts` is passed
+ * straight through (e.g. `{ redactSnippets: true }` for `--no-snippets`).
  */
-export function renderJson(result: ScanResult): string {
-  return JSON.stringify(
-    serialize(() => toJson(result), result),
-    null,
-    2,
-  );
+export function renderJson(result: ScanResult, opts?: ReportOptions): string {
+  return JSON.stringify(toJson(result, opts), null, 2);
 }
 
 /**
  * Render the SARIF 2.1.0 report (pretty-printed, no trailing newline).
  *
- * Delegates to core's `toSarif`, with a minimal SARIF 2.1.0 fallback so the
- * format always produces valid, ingestible output.
+ * Delegates to core's `toSarif` — the monorepo's single source of truth for the
+ * SARIF shape (schema, tool driver, rules, taxonomies). `opts` is passed through
+ * (e.g. `{ redactSnippets: true }` for `--no-snippets`).
  */
-export function renderSarif(result: ScanResult): string {
-  return JSON.stringify(
-    serialize(() => toSarif(result), fallbackSarif(result)),
-    null,
-    2,
-  );
+export function renderSarif(result: ScanResult, opts?: ReportOptions): string {
+  return JSON.stringify(toSarif(result, opts), null, 2);
 }
 
 /**
@@ -73,71 +64,6 @@ export function renderSarif(result: ScanResult): string {
  */
 export function renderCbom(result: ScanResult): string {
   return JSON.stringify(toCbom(result), null, 2);
-}
-
-/**
- * Call a core serializer, falling back when it is an unimplemented stub.
- * Only the documented "not implemented" stub error is swallowed; real errors
- * (e.g. a bug in a future core) propagate. The two branches may have different
- * shapes — both are ultimately handed to `JSON.stringify`.
- */
-function serialize<T, F>(fn: () => T, fallback: F): T | F {
-  try {
-    return fn();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("not implemented")) return fallback;
-    throw err;
-  }
-}
-
-/** A minimal, valid SARIF 2.1.0 log used when core's `toSarif` is unavailable. */
-function fallbackSarif(result: ScanResult): Record<string, unknown> {
-  return {
-    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
-    version: "2.1.0",
-    runs: [
-      {
-        tool: {
-          driver: {
-            name: "qscan",
-            informationUri: "https://github.com/quantakrypto/tools",
-            version: result.toolVersion,
-            rules: [],
-          },
-        },
-        results: result.findings.map((f) => ({
-          ruleId: f.ruleId,
-          level: sarifLevel(f.severity),
-          message: { text: f.message },
-          locations: [
-            {
-              physicalLocation: {
-                artifactLocation: { uri: f.location.file },
-                region: {
-                  startLine: f.location.line,
-                  ...(f.location.column ? { startColumn: f.location.column } : {}),
-                },
-              },
-            },
-          ],
-        })),
-      },
-    ],
-  };
-}
-
-/** Map a qScan severity to a SARIF level. */
-function sarifLevel(severity: Severity): "error" | "warning" | "note" {
-  switch (severity) {
-    case "critical":
-    case "high":
-      return "error";
-    case "medium":
-      return "warning";
-    default:
-      return "note";
-  }
 }
 
 /**

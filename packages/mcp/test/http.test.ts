@@ -19,9 +19,13 @@ import {
   isLoopbackHost,
   createHttpMcpServer,
   createHttpServer,
+  timingSafeEqualStr,
+  originDecision,
+  allowedOriginHosts,
 } from "../src/http.js";
 import { quantakryptoTools, FS_TOOL_NAMES } from "../src/tools.js";
-import type { ToolDefinition } from "../src/protocol.js";
+import type { ToolDefinition, ToolContext } from "../src/protocol.js";
+import { McpServer } from "../src/server.js";
 
 /* ----------------------------- pure: config ------------------------------- */
 
@@ -105,6 +109,56 @@ test("authorizeRequest requires a matching bearer token when one is set", () => 
   assert.equal(wrong.status, 401);
   // Case-insensitive scheme, tolerant of surrounding whitespace.
   assert.equal(authorizeRequest("s3cret", "  bearer   s3cret  ").authorized, true);
+});
+
+/* ------------------ pure: constant-time token compare (M2) ---------------- */
+
+test("timingSafeEqualStr authenticates the correct token and rejects others", () => {
+  assert.equal(timingSafeEqualStr("s3cret", "s3cret"), true);
+  assert.equal(timingSafeEqualStr("s3cret", "s3cret-wrong"), false);
+  assert.equal(timingSafeEqualStr("s3cret", "S3CRET"), false);
+  // Different lengths must NOT throw (the hashing equalizes digest length) and
+  // must compare unequal — the old early length-return is gone.
+  assert.equal(timingSafeEqualStr("short", "a-much-longer-token"), false);
+  assert.equal(timingSafeEqualStr("", ""), true);
+  assert.equal(timingSafeEqualStr("", "x"), false);
+});
+
+test("authorizeRequest stays correct on top of the constant-time compare", () => {
+  assert.equal(authorizeRequest("s3cret", "Bearer s3cret").authorized, true);
+  // A token that is a prefix of the real one must be rejected.
+  assert.equal(authorizeRequest("s3cret", "Bearer s3cre").authorized, false);
+  assert.equal(authorizeRequest("s3cret", "Bearer s3cretX").authorized, false);
+});
+
+/* -------------------- pure: Origin validation (P0) ------------------------ */
+
+test("originDecision allows requests with no Origin (non-browser clients)", () => {
+  const hosts = allowedOriginHosts(resolveHttpConfig({}));
+  assert.equal(originDecision(hosts, undefined).ok, true);
+  assert.equal(originDecision(hosts, "").ok, true);
+});
+
+test("originDecision allows loopback Origins by default", () => {
+  const hosts = allowedOriginHosts(resolveHttpConfig({}));
+  assert.equal(originDecision(hosts, "http://127.0.0.1:3000").ok, true);
+  assert.equal(originDecision(hosts, "http://localhost:8080").ok, true);
+});
+
+test("originDecision rejects a foreign Origin (DNS-rebinding / CSRF guard)", () => {
+  const hosts = allowedOriginHosts(resolveHttpConfig({}));
+  const evil = originDecision(hosts, "http://evil.example.com");
+  assert.equal(evil.ok, false);
+  assert.match(evil.reason ?? "", /allow-list/i);
+  assert.equal(originDecision(hosts, "null").ok, false);
+});
+
+test("originDecision honours QUANTAKRYPTO_MCP_ALLOW_ORIGIN", () => {
+  const hosts = allowedOriginHosts(
+    resolveHttpConfig({ QUANTAKRYPTO_MCP_ALLOW_ORIGIN: "https://app.example.com" }),
+  );
+  assert.equal(originDecision(hosts, "https://app.example.com").ok, true);
+  assert.equal(originDecision(hosts, "https://other.example.com").ok, false);
 });
 
 /* --------------------------- pure: gating --------------------------------- */
@@ -216,6 +270,159 @@ test("end-to-end: /health needs no auth", async () => {
     assert.equal(res.status, 200);
     const body = (await res.json()) as { status: string };
     assert.equal(body.status, "ok");
+  } finally {
+    await close();
+  }
+});
+
+/* ---------------------- end-to-end: Origin (P0) --------------------------- */
+
+test("end-to-end: a foreign Origin is rejected with 403", async () => {
+  const { base, close } = await boot({});
+  try {
+    const res = await rpc(
+      base,
+      { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      { origin: "http://evil.example.com" },
+    );
+    assert.equal(res.status, 403);
+    const body = (await res.json()) as { error?: { message: string } };
+    assert.match(body.error?.message ?? "", /origin/i);
+  } finally {
+    await close();
+  }
+});
+
+test("end-to-end: a loopback Origin is accepted", async () => {
+  const { base, close } = await boot({});
+  try {
+    const res = await rpc(
+      base,
+      { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      { origin: "http://localhost" },
+    );
+    assert.equal(res.status, 200);
+  } finally {
+    await close();
+  }
+});
+
+/* -------------------- end-to-end: body errors (M1) ------------------------ */
+
+test("end-to-end: an oversized body is 413, a malformed body is 400", async () => {
+  const { base, close } = await boot({});
+  try {
+    // > 1 MiB body → BodyTooLargeError → 413.
+    const huge = "x".repeat(1024 * 1024 + 16);
+    const tooBig = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: huge,
+    });
+    assert.equal(tooBig.status, 413);
+    const bigBody = (await tooBig.json()) as { error?: { message: string } };
+    assert.match(bigBody.error?.message ?? "", /too large/i);
+
+    // Well-formed transport, invalid JSON → 400 (a parse error, not a 413).
+    const bad = await fetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ not json",
+    });
+    assert.equal(bad.status, 400);
+  } finally {
+    await close();
+  }
+});
+
+/* ---------- end-to-end: timeout aborts the underlying work (P0) ----------- */
+
+/** Boot an HTTP server wrapping a custom McpServer, on an ephemeral port. */
+async function bootServer(
+  mcp: McpServer,
+  envOverrides: Record<string, string | undefined> = {},
+): Promise<{ base: string; close: () => Promise<void> }> {
+  const cfg = resolveHttpConfig({ ...envOverrides, PORT: undefined });
+  const server = createHttpServer(mcp, cfg);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    base: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+test("end-to-end: a timed-out request returns 504 AND aborts the in-flight work", async () => {
+  // A tool that hangs until its abort signal fires, recording that it was
+  // aborted. This proves the timeout doesn't just 504 the client while the work
+  // keeps running in the background — the signal is threaded through and fires.
+  let aborted = false;
+  const slowTool: ToolDefinition = {
+    name: "slow",
+    description: "blocks until aborted",
+    inputSchema: { type: "object", additionalProperties: false },
+    handler: (_args: Record<string, unknown>, context?: ToolContext) =>
+      new Promise((resolve) => {
+        const signal = context?.signal;
+        if (!signal) {
+          resolve({ content: [{ type: "text", text: "no signal" }] });
+          return;
+        }
+        signal.addEventListener("abort", () => {
+          aborted = true;
+          resolve({ content: [{ type: "text", text: "aborted" }], isError: true });
+        });
+      }),
+  };
+  const mcp = new McpServer({ info: { name: "test", version: "0" } });
+  mcp.registerTool(slowTool);
+
+  const { base, close } = await bootServer(mcp, { QUANTAKRYPTO_MCP_TIMEOUT_MS: "50" });
+  try {
+    const res = await rpc(base, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "slow", arguments: {} },
+    });
+    assert.equal(res.status, 504);
+    const body = (await res.json()) as { error?: { message: string } };
+    // The message is generic — no internal detail leaked.
+    assert.equal(body.error?.message, "request timed out");
+    // Give the abort listener a tick to run, then confirm the work was cancelled.
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(aborted, true, "the in-flight scan must be aborted, not leaked");
+  } finally {
+    await close();
+  }
+});
+
+/* ------------- end-to-end: server errors are sanitized (P0) --------------- */
+
+test("end-to-end: an internal tool throw is sanitized for the remote caller", async () => {
+  const boomTool: ToolDefinition = {
+    name: "boom",
+    description: "throws with a server path in the message",
+    inputSchema: { type: "object", additionalProperties: false },
+    handler: () => {
+      throw new Error("ENOENT: no such file or directory, open '/etc/shadow'");
+    },
+  };
+  const mcp = new McpServer({ info: { name: "test", version: "0" } });
+  mcp.registerTool(boomTool);
+
+  const { base, close } = await bootServer(mcp);
+  try {
+    const res = await rpc(base, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "boom", arguments: {} },
+    });
+    const body = (await res.json()) as { error?: { message: string } };
+    // The raw ENOENT/path must not reach the client; a generic message is used.
+    assert.equal(body.error?.message, "internal error");
+    assert.doesNotMatch(JSON.stringify(body), /\/etc\/shadow/);
   } finally {
     await close();
   }

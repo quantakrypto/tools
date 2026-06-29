@@ -184,13 +184,23 @@ function parseAcvpDocument(doc: unknown, notes: string[], file: string): Vector[
           // ML-DSA: we can robustly check sigVer cases (no nonce dependence).
           if (mode.includes("sigver") || ("signature" in t && "pk" in t)) {
             const expected = t["testPassed"];
+            // NIST ACVP sigVer files mix valid and INTENTIONALLY-INVALID
+            // signatures; the expected verdict lives in `testPassed`. If that
+            // field is absent (or not a boolean) we cannot know whether the
+            // signature should verify, so we SKIP the case rather than invent
+            // `true` — defaulting to true flags a conformant SUT (which
+            // correctly returns valid:false on a bad signature) as failing.
+            if (typeof expected !== "boolean") {
+              notes.push(`${file}: skipped a sigVer case with no boolean "testPassed" verdict`);
+              continue;
+            }
             out.push({
               kind: "dsa-verify",
               param,
               pk: hexToBytes(reqHex(t, "pk", "ek")),
               msg: hexToBytes(reqHex(t, "message", "msg")),
               sig: hexToBytes(reqHex(t, "signature", "sig")),
-              expected: typeof expected === "boolean" ? expected : true,
+              expected,
             });
           } else {
             notes.push(`${file}: ML-DSA mode "${mode}" not used for KAT (sign is nonce-dependent)`);

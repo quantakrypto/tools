@@ -7,7 +7,14 @@
  * I/O whatsoever — the stdio and http transports feed it parsed messages and
  * serialize whatever it returns. This makes the whole protocol surface
  * unit-testable by calling `handle` directly.
+ *
+ * The one concession to I/O is that unexpected (non-{@link RpcError}) throws are
+ * logged to stderr with full detail and replaced with a generic message in the
+ * response, so server internals (paths, ENOENT targets) never reach the remote
+ * caller. The wire response remains a pure function of the inputs.
  */
+
+import process from "node:process";
 
 import {
   ErrorCode,
@@ -21,6 +28,7 @@ import {
 import type {
   JsonRpcRequest,
   JsonRpcResponse,
+  ToolContext,
   ToolDefinition,
   ToolDescriptor,
   ToolResult,
@@ -81,10 +89,12 @@ export class McpServer {
    *
    * @param message An already-parsed JSON value (the transport handles framing
    *   and `JSON.parse`). May be malformed; this method validates it.
+   * @param context Optional per-call context (e.g. an `AbortSignal` for the
+   *   transport's request deadline) forwarded to the invoked tool handler.
    * @returns The response to send back, or `null` when no reply is due
    *   (notifications, or an unparseable notification-shaped message).
    */
-  async handle(message: unknown): Promise<JsonRpcResponse | null> {
+  async handle(message: unknown, context?: ToolContext): Promise<JsonRpcResponse | null> {
     if (!isJsonRpcRequestLike(message)) {
       // Not a valid request object. We can't know its id, so reply with null id.
       return makeFailure(null, ErrorCode.InvalidRequest, "invalid JSON-RPC request");
@@ -95,22 +105,27 @@ export class McpServer {
     const id = notification ? null : (req.id ?? null);
 
     try {
-      const result = await this.dispatch(req);
+      const result = await this.dispatch(req, context);
       // Notifications never receive a response, even on success.
       if (notification) return null;
       return makeSuccess(id, result);
     } catch (err) {
       if (notification) return null; // swallow errors from notifications
       if (err instanceof RpcError) {
+        // RpcError messages are author-controlled validation strings, safe to return.
         return makeFailure(id, err.code, err.message, err.data);
       }
-      const messageText = err instanceof Error ? err.message : String(err);
-      return makeFailure(id, ErrorCode.InternalError, messageText);
+      // An unexpected throw may carry a server-side detail (a filesystem path, an
+      // ENOENT for /etc/shadow, …). Log the detail locally; return a generic
+      // message so the remote caller never learns server internals.
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      process.stderr.write(`quantakrypto MCP: internal error handling request: ${detail}\n`);
+      return makeFailure(id, ErrorCode.InternalError, "internal error");
     }
   }
 
   /** Route a request to the right handler. Throws {@link RpcError} on failure. */
-  private async dispatch(req: JsonRpcRequest): Promise<unknown> {
+  private async dispatch(req: JsonRpcRequest, context?: ToolContext): Promise<unknown> {
     switch (req.method) {
       case "initialize":
         return this.onInitialize();
@@ -122,7 +137,7 @@ export class McpServer {
       case "tools/list":
         return { tools: this.listTools() };
       case "tools/call":
-        return this.onToolsCall(req.params);
+        return this.onToolsCall(req.params, context);
       default:
         throw new RpcError(ErrorCode.MethodNotFound, `method not found: ${req.method}`);
     }
@@ -144,7 +159,7 @@ export class McpServer {
   }
 
   /** Validate params and execute a tool for `tools/call`. */
-  private async onToolsCall(params: unknown): Promise<ToolResult> {
+  private async onToolsCall(params: unknown, context?: ToolContext): Promise<ToolResult> {
     if (typeof params !== "object" || params === null || Array.isArray(params)) {
       throw new RpcError(ErrorCode.InvalidParams, "tools/call requires an object params");
     }
@@ -165,6 +180,6 @@ export class McpServer {
     const toolArgs = (args ?? {}) as Record<string, unknown>;
     // Tool-level failures are reported as isError results, not protocol errors,
     // so the model can read and react to them. Only unexpected throws bubble up.
-    return tool.handler(toolArgs);
+    return tool.handler(toolArgs, context);
   }
 }

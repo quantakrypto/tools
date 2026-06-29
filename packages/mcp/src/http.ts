@@ -37,7 +37,7 @@
 
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import process from "node:process";
@@ -97,6 +97,11 @@ export interface HttpConfig {
   maxResponseBytes: number;
   /** True when the host is a loopback interface (safe without auth). */
   loopback: boolean;
+  /**
+   * Extra origin hosts to allow on `POST /mcp` (lower-cased hostnames), beyond
+   * the implicit loopback set and the bind host. From QUANTAKRYPTO_MCP_ALLOW_ORIGIN.
+   */
+  allowedOrigins: string[];
 }
 
 /**
@@ -114,6 +119,7 @@ export function resolveHttpConfig(env: HttpEnv, options: HttpServerOptions = {})
   const maxResponseBytes =
     options.maxResponseBytes ??
     toInt(env.QUANTAKRYPTO_MCP_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES);
+  const allowedOrigins = parseOriginList(env.QUANTAKRYPTO_MCP_ALLOW_ORIGIN);
   return {
     host,
     port,
@@ -122,7 +128,27 @@ export function resolveHttpConfig(env: HttpEnv, options: HttpServerOptions = {})
     timeoutMs,
     maxResponseBytes,
     loopback: isLoopbackHost(host),
+    allowedOrigins,
   };
+}
+
+/**
+ * Parse the comma-separated origin allow-list into lower-cased hostnames. Each
+ * entry may be a bare host or a full origin URL; either way only the hostname is
+ * retained (the value compared against `new URL(Origin).hostname`).
+ */
+function parseOriginList(value: string | undefined): string[] {
+  const out = new Set<string>();
+  for (const raw of (value ?? "").split(",")) {
+    const entry = raw.trim().toLowerCase();
+    if (entry.length === 0) continue;
+    try {
+      out.add(new URL(entry).hostname);
+    } catch {
+      out.add(entry); // bare hostname (no scheme).
+    }
+  }
+  return [...out];
 }
 
 /** Parse a positive integer from an env string, falling back on bad input. */
@@ -157,6 +183,50 @@ export function startupDecision(config: HttpConfig): {
   return { ok: true };
 }
 
+/**
+ * Decide whether a request's `Origin` / `Host` is acceptable, to defend the
+ * default no-token loopback config against DNS-rebinding and localhost-CSRF: a
+ * malicious web page can POST to `http://127.0.0.1:<port>/mcp`, but the browser
+ * stamps a foreign `Origin` we can reject. Pure and testable.
+ *
+ * Policy:
+ *   - No `Origin` header (curl, a native MCP client, same-origin GET) → allow;
+ *     the header is a browser artifact and absence is not an attack signal here.
+ *   - An `Origin` present → its host must be a configured loopback host (or a
+ *     host explicitly added to the allow-list). A foreign origin is rejected.
+ *   - When the server itself binds a non-loopback interface, a token is already
+ *     mandatory (see {@link startupDecision}); the loopback allow-list still
+ *     applies but auth is the primary control there.
+ */
+export function originDecision(
+  allowedHosts: ReadonlySet<string>,
+  originHeader: string | undefined,
+): { ok: boolean; reason?: string } {
+  const origin = (originHeader ?? "").trim();
+  if (origin.length === 0) return { ok: true }; // non-browser client; nothing to check.
+  if (origin.toLowerCase() === "null") {
+    return { ok: false, reason: "opaque/null Origin is not allowed" };
+  }
+  let host: string;
+  try {
+    host = new URL(origin).hostname.toLowerCase();
+  } catch {
+    return { ok: false, reason: "malformed Origin header" };
+  }
+  if (allowedHosts.has(host)) return { ok: true };
+  return { ok: false, reason: `Origin host "${host}" is not in the allow-list` };
+}
+
+/** The hosts an `Origin` may name. Loopback by default, plus the bind host. */
+export function allowedOriginHosts(config: HttpConfig): Set<string> {
+  const hosts = new Set<string>(["127.0.0.1", "::1", "localhost"]);
+  // Allow the interface the server is actually bound to (e.g. a LAN address with
+  // a token), so a same-host browser client keeps working.
+  hosts.add(config.host.trim().toLowerCase());
+  for (const extra of config.allowedOrigins) hosts.add(extra);
+  return hosts;
+}
+
 /** A request-authorization outcome. */
 export interface AuthDecision {
   authorized: boolean;
@@ -187,12 +257,19 @@ export function authorizeRequest(
   return { authorized: true };
 }
 
-/** Constant-time-ish string compare (length-independent short-circuit guarded). */
-function timingSafeEqualStr(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+/**
+ * Constant-time string compare. Both inputs are hashed with the same algorithm
+ * to fixed-length digests before {@link timingSafeEqual}, so the comparison runs
+ * over equal-length buffers and the early length-mismatch return (which leaked
+ * the configured token's length) is gone. The hashing is a domain-separation /
+ * length-equalization step, not a secrecy measure: `timingSafeEqual` still does
+ * the constant-time work and rejects unequal digests.
+ */
+export function timingSafeEqualStr(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a, "utf8").digest();
+  const hb = createHash("sha256").update(b, "utf8").digest();
+  // Same algorithm ⇒ identical digest length ⇒ timingSafeEqual never throws.
+  return timingSafeEqual(ha, hb);
 }
 
 /**
@@ -213,22 +290,52 @@ export function gateHttpTools(
 /* HTTP plumbing                                                               */
 /* -------------------------------------------------------------------------- */
 
-/** Read a request body fully, enforcing the size cap. Resolves to the raw string. */
+/**
+ * Error thrown by {@link readBody} when the request body exceeds the size cap.
+ * Distinguished from a transport/I/O error so the caller can map it to HTTP 413
+ * specifically, while genuine read failures map to 400/500 (M1).
+ */
+export class BodyTooLargeError extends Error {
+  override readonly name = "BodyTooLargeError";
+  constructor(message = "request body too large") {
+    super(message);
+  }
+}
+
+/**
+ * Read a request body fully, enforcing the size cap. Resolves to the raw string.
+ * Rejects with a {@link BodyTooLargeError} when the cap is exceeded, and with the
+ * original transport error (an I/O failure) otherwise — the two are mapped to
+ * different HTTP statuses by the caller (M1).
+ */
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let done = false;
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => {
+      if (done) return;
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
-        reject(new Error("request body too large"));
-        req.destroy();
+        // Stop consuming and reject. We deliberately do NOT destroy the socket
+        // here: the caller still needs to flush a 413 response, so it owns the
+        // teardown (resume-and-drain) once that response is written.
+        done = true;
+        req.pause();
+        reject(new BodyTooLargeError());
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (!done) resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+    req.on("error", (err: Error) => {
+      if (!done) {
+        done = true;
+        reject(err);
+      }
+    });
   });
 }
 
@@ -248,19 +355,40 @@ function sendJson(
   res.end(payload);
 }
 
-/** Race a handler against a deadline; rejects with a timeout error if exceeded. */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+/** Error raised by {@link withTimeout} when the request deadline elapses. */
+export class RequestTimeoutError extends Error {
+  override readonly name = "RequestTimeoutError";
+  constructor(message = "request timed out") {
+    super(message);
+  }
+}
+
+/**
+ * Race a handler against a deadline. On timeout the returned promise rejects with
+ * a {@link RequestTimeoutError} AND the supplied {@link AbortController} is
+ * aborted, so the in-flight work (a `scan()` wired to `controller.signal`) stops
+ * cooperatively instead of running unbounded in the background after the 504.
+ *
+ * The controller is always aborted once the race settles (success, failure, or
+ * timeout) so no scan keeps running past its response.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, controller: AbortController): Promise<T> {
   if (!(ms > 0)) return promise;
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("request timed out")), ms);
+    const timer = setTimeout(() => {
+      controller.abort(); // cancel the underlying scan — no leaked background work.
+      reject(new RequestTimeoutError());
+    }, ms);
     timer.unref?.();
     promise.then(
       (value) => {
         clearTimeout(timer);
+        controller.abort(); // settle the signal so nothing lingers post-response.
         resolve(value);
       },
       (err: unknown) => {
         clearTimeout(timer);
+        controller.abort();
         reject(err instanceof Error ? err : new Error(String(err)));
       },
     );
@@ -275,14 +403,28 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export function createHttpServer(server: McpServer, config: HttpConfig): Server {
   return createServer((req, res) => {
     void handleRequest(server, config, req, res).catch((err: unknown) => {
-      const messageText = err instanceof Error ? err.message : String(err);
+      // Last-resort handler: log the detail locally, return a generic message so
+      // a remote caller never sees server internals (paths, stack traces).
+      logServerError("unhandled request error", err);
       if (!res.headersSent) {
-        sendJson(res, 500, makeFailure(null, ErrorCode.InternalError, messageText));
+        sendJson(res, 500, makeFailure(null, ErrorCode.InternalError, "internal error"));
       } else {
         res.end();
       }
     });
   });
+}
+
+/** Log a server-side error detail to stderr (never sent to the remote caller). */
+function logServerError(context: string, err: unknown): void {
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  process.stderr.write(`quantakrypto MCP (http): ${context}: ${detail}\n`);
+}
+
+/** Extract the (single) `Origin` request header, if present. */
+function originHeader(req: IncomingMessage): string | undefined {
+  const value = req.headers.origin;
+  return Array.isArray(value) ? value[0] : value;
 }
 
 /** Route and handle a single HTTP request. */
@@ -307,6 +449,18 @@ async function handleRequest(
       sendJson(res, 405, makeFailure(null, ErrorCode.InvalidRequest, "method not allowed"), {
         allow: "POST",
       });
+      return;
+    }
+    // DNS-rebinding / localhost-CSRF guard: reject a foreign browser Origin
+    // BEFORE auth/body, so the default no-token loopback config is not a
+    // confused deputy for a malicious web page. (P0 — origin validation.)
+    const origin = originDecision(allowedOriginHosts(config), originHeader(req));
+    if (!origin.ok) {
+      sendJson(
+        res,
+        403,
+        makeFailure(null, ErrorCode.InvalidRequest, origin.reason ?? "forbidden origin"),
+      );
       return;
     }
     // Authenticate BEFORE reading the body or dispatching (Q-02).
@@ -345,8 +499,27 @@ async function handleMcpPost(
   try {
     raw = await readBody(req);
   } catch (err) {
-    const messageText = err instanceof Error ? err.message : String(err);
-    sendJson(res, 413, makeFailure(null, ErrorCode.InvalidRequest, messageText), sessionHeaders);
+    // M1: only the size-cap rejection is a 413. A genuine transport/I/O error
+    // (the client aborted, a socket reset) is a 400 — it is the request that
+    // failed, not a server fault — and never echoes the raw error text.
+    if (err instanceof BodyTooLargeError) {
+      // Flush the 413 first, then tear down the connection so a still-uploading
+      // client stops sending. Destroying on `finish` guarantees the response is
+      // written before the socket goes away (avoids a connection-reset race).
+      res.on("finish", () => req.destroy());
+      sendJson(res, 413, makeFailure(null, ErrorCode.InvalidRequest, "request body too large"), {
+        ...sessionHeaders,
+        connection: "close",
+      });
+    } else {
+      logServerError("error reading request body", err);
+      sendJson(
+        res,
+        400,
+        makeFailure(null, ErrorCode.InvalidRequest, "error reading request body"),
+        sessionHeaders,
+      );
+    }
     return;
   }
 
@@ -358,12 +531,36 @@ async function handleMcpPost(
     return;
   }
 
+  // Cancellation: the controller's signal is threaded into the tool handler (and
+  // thus into `scan()`); withTimeout aborts it on deadline so a timed-out
+  // request stops the underlying work instead of leaking it (P0 — timeout/abort).
+  const controller = new AbortController();
   let response: JsonRpcResponse | null;
   try {
-    response = await withTimeout(server.handle(parsed), config.timeoutMs);
+    response = await withTimeout(
+      server.handle(parsed, { signal: controller.signal }),
+      config.timeoutMs,
+      controller,
+    );
   } catch (err) {
-    const messageText = err instanceof Error ? err.message : String(err);
-    sendJson(res, 504, makeFailure(null, ErrorCode.InternalError, messageText), sessionHeaders);
+    if (err instanceof RequestTimeoutError) {
+      sendJson(
+        res,
+        504,
+        makeFailure(null, ErrorCode.InternalError, "request timed out"),
+        sessionHeaders,
+      );
+    } else {
+      // server.handle never rejects in practice (it catches internally), but be
+      // defensive and never leak a raw message.
+      logServerError("error dispatching request", err);
+      sendJson(
+        res,
+        500,
+        makeFailure(null, ErrorCode.InternalError, "internal error"),
+        sessionHeaders,
+      );
+    }
     return;
   }
 

@@ -50,6 +50,13 @@ inputs:
       Token used to comment on the pull request (only needed when
       comment-pr is "true"). Typically the workflow's built-in GITHUB_TOKEN.
     required: false
+  redact-snippets:
+    description: >-
+      When "true", omit the matched source snippet from every finding in the
+      written report. Snippets of sensitive findings (e.g. embedded key
+      material) are ALWAYS omitted regardless of this setting.
+    required: false
+    default: "false"
 
 outputs:
   findings-count:

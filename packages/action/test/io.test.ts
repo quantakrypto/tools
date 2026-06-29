@@ -98,19 +98,57 @@ test("formatCommand: backticks/']' in text are inert in a workflow command", () 
   assert.equal(out, "::warning file=x.ts,line=1::use `RSA` here ]");
 });
 
-test("setOutput appends a heredoc entry to $GITHUB_OUTPUT", () => {
+test("setOutput appends a heredoc entry to $GITHUB_OUTPUT with a random delimiter", () => {
   const dir = mkdtempSync(join(tmpdir(), "quantakrypto-out-"));
   const file = join(dir, "out.txt");
   const env = { GITHUB_OUTPUT: file };
   setOutput("findings-count", "3", env);
   setOutput("readiness-score", "88", env);
   const contents = readFileSync(file, "utf8");
+  // The delimiter is a fresh ghadelimiter_<uuid> per call, not the predictable
+  // name-derived form, so a value can never pre-guess and forge it.
   assert.match(
     contents,
-    /findings-count<<ghadelimiter_findings-count\n3\nghadelimiter_findings-count\n/,
+    /findings-count<<ghadelimiter_[0-9a-f-]{36}\n3\nghadelimiter_[0-9a-f-]{36}\n/,
   );
   assert.match(
     contents,
-    /readiness-score<<ghadelimiter_readiness-score\n88\nghadelimiter_readiness-score\n/,
+    /readiness-score<<ghadelimiter_[0-9a-f-]{36}\n88\nghadelimiter_[0-9a-f-]{36}\n/,
   );
+  // The legacy predictable delimiter must no longer appear.
+  assert.doesNotMatch(contents, /ghadelimiter_findings-count/);
+});
+
+// ---------------------------------------------------------------------------
+// P0: output injection via a forged heredoc delimiter. With the old predictable
+// `ghadelimiter_<name>`, a value containing that exact line could close the
+// heredoc early and start a second `forged<<…` block, injecting other outputs.
+// The random delimiter defeats this; the explicit guards add defense in depth.
+// ---------------------------------------------------------------------------
+
+test("setOutput: a value that forges the heredoc framing is contained, not injected", () => {
+  const dir = mkdtempSync(join(tmpdir(), "quantakrypto-out-"));
+  const file = join(dir, "out.txt");
+  const env = { GITHUB_OUTPUT: file };
+  // An attacker-shaped value that tries to close the (predictable) heredoc and
+  // open a fresh `is-admin<<…` output.
+  const hostile = [
+    "ghadelimiter_findings-count",
+    "is-admin<<ghadelimiter_is-admin",
+    "true",
+    "ghadelimiter_is-admin",
+  ].join("\n");
+  setOutput("findings-count", hostile, env);
+  const contents = readFileSync(file, "utf8");
+  // The forged content is sandwiched between the two RANDOM delimiters, so it is
+  // the literal VALUE of findings-count — it never becomes its own output entry.
+  const m = contents.match(/findings-count<<(ghadelimiter_[0-9a-f-]{36})\n([\s\S]*?)\n\1\n/);
+  assert.ok(m, "expected a single random-delimited heredoc entry");
+  assert.equal(m![2], hostile, "the hostile lines stay inside the value, not as new outputs");
+});
+
+test("setOutput rejects an output name containing a newline", () => {
+  const dir = mkdtempSync(join(tmpdir(), "quantakrypto-out-"));
+  const env = { GITHUB_OUTPUT: join(dir, "out.txt") };
+  assert.throws(() => setOutput("bad\nname", "v", env), /should not contain a CR or LF/);
 });

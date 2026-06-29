@@ -105,7 +105,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     } else if (!options.quiet || options.format !== "human") {
       // In quiet mode we still emit machine formats to stdout (the point of a
       // pipe), but suppress the human banner.
-      process.stdout.write(report.endsWith("\n") ? report : `${report}\n`);
+      await writeStdout(report.endsWith("\n") ? report : `${report}\n`);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -120,16 +120,39 @@ export async function main(argv: readonly string[]): Promise<number> {
   return run.exitCode;
 }
 
+/**
+ * Write to stdout, awaiting `drain` when the kernel buffer is full.
+ *
+ * `process.stdout.write` returns `false` when the OS buffer can't accept the
+ * whole chunk (typical for large reports down a pipe or file redirect). If the
+ * process then exits before the buffer flushes, the tail of the report is lost.
+ * When the write is not fully flushed we wait for the `drain` event, so the
+ * bytes are handed to the OS before we return and the report is never
+ * truncated, regardless of how the caller exits. A fully-flushed write (the
+ * common case, and a TTY) resolves synchronously on the next microtask.
+ */
+function writeStdout(chunk: string): Promise<void> {
+  const flushed = process.stdout.write(chunk);
+  if (flushed) return Promise.resolve();
+  return new Promise((resolve) => process.stdout.once("drain", resolve));
+}
+
 // Only auto-run when invoked as a script (not when imported by a test).
 const invokedDirectly =
   process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (invokedDirectly) {
   main(process.argv.slice(2))
-    .then((code) => process.exit(code))
+    .then((code) => {
+      // Set the exit code and return WITHOUT calling process.exit(): a bare
+      // process.exit() tears down the event loop before stdout's async buffer
+      // drains, truncating large SARIF/JSON reports written to a pipe or file
+      // redirect. Letting the loop empty naturally lets the buffer flush first.
+      process.exitCode = code;
+    })
     .catch((err) => {
       const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
       process.stderr.write(`qscan: fatal: ${message}\n`);
-      process.exit(EXIT.ERROR);
+      process.exitCode = EXIT.ERROR;
     });
 }

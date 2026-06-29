@@ -2,7 +2,7 @@ import { createRequire as __cr } from 'module'; const require = __cr(import.meta
 
 // src/main.ts
 import { mkdir, readFile as readFile3, writeFile as writeFile2 } from "node:fs/promises";
-import { dirname as dirname3, isAbsolute, join as join4, resolve } from "node:path";
+import { dirname as dirname3, isAbsolute, resolve, sep as sep2 } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // ../core/dist/version.js
@@ -329,6 +329,8 @@ function makeFinding(spec) {
     finding.remediation = remediation;
   if (spec.cwe)
     finding.cwe = spec.cwe;
+  if (spec.sensitive)
+    finding.sensitive = true;
   return finding;
 }
 function hasExtension(filePath, exts) {
@@ -373,7 +375,7 @@ var CWE_HARDCODED_KEY = "CWE-798";
 // ../core/dist/detectors/source.js
 var RE_GENERATE_KEYPAIR = /generateKeyPair(?:Sync)?\s*\(\s*['"`](rsa|ec|dsa|dh|x25519|x448|ed25519|ed448)['"`]/g;
 var RE_CREATE_SIGN_VERIFY = /create(?:Sign|Verify)\s*\(/g;
-var RE_ONESHOT_SIGN_VERIFY = /(?:^|[^.\w])(?:crypto\.)?(sign|verify)\s*\(\s*['"`][\w.-]+['"`]\s*,/g;
+var RE_ONESHOT_SIGN_VERIFY = /(?:^|[^.\w])(?:crypto\.)?(sign|verify)\s*\(\s*(?:['"`][\w.-]+['"`]|null)\s*,/g;
 var RE_CREATE_DH = /createDiffieHellman(?:Group)?\s*\(/g;
 var RE_GET_DH = /getDiffieHellman\s*\(\s*['"`](modp\d+)['"`]\s*\)/g;
 var RE_CREATE_ECDH = /createECDH\s*\(/g;
@@ -806,6 +808,7 @@ var sshCertDetector = {
         algorithm,
         hndl: false,
         cwe: CWE_BROKEN_CRYPTO,
+        sensitive: true,
         message: `SSH public key type "${tok}" is a classical key forgeable by a quantum attacker.`,
         remediation: "Plan migration to PQC-capable SSH (e.g. sntrup761x25519 KEX, PQC host keys).",
         file,
@@ -857,6 +860,7 @@ var PEM_RULES = [
     algorithm: "RSA",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded RSA private key (PKCS#1 PEM); classical and not quantum-safe.",
     remediation: "Migrate to ML-DSA / ML-KEM keys and remove embedded private keys from source."
   },
@@ -869,6 +873,7 @@ var PEM_RULES = [
     algorithm: "ECDSA",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded EC private key (SEC1 PEM); classical ECDSA/ECDH key, not quantum-safe.",
     remediation: "Migrate to ML-DSA (FIPS 204) keys and remove embedded private keys from source."
   },
@@ -881,6 +886,7 @@ var PEM_RULES = [
     algorithm: "DSA",
     hndl: false,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded DSA private key (PEM); classical, already deprecated, and not quantum-safe.",
     remediation: "Rotate immediately (DSA is deprecated) and migrate to ML-DSA-65 (FIPS 204)."
   },
@@ -893,6 +899,7 @@ var PEM_RULES = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded OpenSSH private key (RSA/ECDSA/Ed25519); classical and not quantum-safe.",
     remediation: "Rotate the key; plan migration to PQC-capable SSH (e.g. sntrup761x25519)."
   },
@@ -905,6 +912,7 @@ var PEM_RULES = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded PGP/GPG private key block (RSA/ECDSA/EdDSA/ElGamal); classical and not quantum-safe.",
     remediation: "Rotate the key; track OpenPGP PQC drafts for migration."
   },
@@ -929,6 +937,7 @@ var PEM_RULES = [
     algorithm: "unknown",
     hndl: true,
     cwe: CWE_HARDCODED_KEY,
+    sensitive: true,
     message: "Embedded PKCS#8 private key; likely classical RSA/EC, not quantum-safe.",
     remediation: "Migrate to PQC keys and remove embedded private keys from source."
   },
@@ -967,6 +976,7 @@ var pemDetector = {
           algorithm: rule.algorithm,
           hndl: rule.hndl,
           cwe: rule.cwe,
+          sensitive: rule.sensitive,
           message: rule.message,
           remediation: rule.remediation,
           file,
@@ -1317,6 +1327,20 @@ function buildInventory(findings) {
   };
 }
 
+// ../core/dist/errors.js
+var AbortError = class extends Error {
+  name = "AbortError";
+  constructor(message = "The scan was aborted.") {
+    super(message);
+  }
+};
+var BudgetExceededError = class extends Error {
+  name = "BudgetExceededError";
+  constructor(message) {
+    super(message);
+  }
+};
+
 // ../core/dist/scan.js
 var detectors = [...sourceDetectors, pemDetector];
 function compareFindings(a, b) {
@@ -1357,6 +1381,10 @@ async function scan(options) {
   const singleFileName = rootIsFile ? path2.basename(options.root) : null;
   const findings = [];
   let filesScanned = 0;
+  let bytesScanned = 0;
+  const signal = options.signal;
+  const maxFiles = options.maxFiles;
+  const maxBytes = options.maxBytes;
   const relPaths = options.files ? filterExplicitFiles(options.files, options) : walkFiles(options.root, {
     include: options.include,
     exclude: options.exclude,
@@ -1364,6 +1392,11 @@ async function scan(options) {
     maxFileSize: options.maxFileSize
   });
   for await (const rel of relPaths) {
+    if (signal?.aborted)
+      throw new AbortError();
+    if (typeof maxFiles === "number" && filesScanned >= maxFiles) {
+      throw new BudgetExceededError(`maxFiles budget exceeded (limit: ${maxFiles}).`);
+    }
     const absPath = singleFileName ? options.root : path2.join(baseDir, ...rel.split("/"));
     const reportedPath = singleFileName ? toPosix(rel) : rel;
     options.onFile?.(reportedPath);
@@ -1375,6 +1408,10 @@ async function scan(options) {
     }
     if (!scanMinified && !isManifestFile(reportedPath) && looksMinified(content)) {
       continue;
+    }
+    bytesScanned += Buffer.byteLength(content, "utf8");
+    if (typeof maxBytes === "number" && bytesScanned > maxBytes) {
+      throw new BudgetExceededError(`maxBytes budget exceeded (limit: ${maxBytes}).`);
     }
     filesScanned += 1;
     findings.push(...detectFile(reportedPath, content, dets, {
@@ -1396,7 +1433,7 @@ async function scan(options) {
     toolVersion: VERSION
   };
 }
-async function* filterExplicitFiles(files, options) {
+function filterExplicitFileList(files, options) {
   const include = options.include ?? [];
   const exclude = options.exclude ?? [];
   const seen = /* @__PURE__ */ new Set();
@@ -1406,15 +1443,19 @@ async function* filterExplicitFiles(files, options) {
     seen.add(f);
     return true;
   }).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
-  for (const rel of list) {
+  return list.filter((rel) => {
     if (isBinaryPath(rel))
-      continue;
+      return false;
     if (include.length > 0 && !matchesAny2(rel, include))
-      continue;
+      return false;
     if (matchesAny2(rel, exclude))
-      continue;
+      return false;
+    return true;
+  });
+}
+async function* filterExplicitFiles(files, options) {
+  for (const rel of filterExplicitFileList(files, options))
     yield rel;
-  }
 }
 function matchesAny2(rel, patterns) {
   for (const pattern of patterns) {
@@ -1484,8 +1525,8 @@ function shouldParallelize(options, files) {
 async function enumerateFiles(options, baseDir) {
   const rels = [];
   if (options.files) {
-    for (const f of options.files)
-      rels.push(toPosix(f));
+    for (const rel of filterExplicitFileList(options.files, options))
+      rels.push(rel);
   } else {
     for await (const rel of walkFiles(options.root, {
       include: options.include,
@@ -1711,25 +1752,31 @@ async function changedFiles(root, since) {
     return [];
   const out = /* @__PURE__ */ new Set();
   if (since) {
-    for (const f of toLines(await git(root, ["diff", "--name-only", "--diff-filter=ACMR", since]))) {
+    for (const f of toLines(await git(root, ["diff", "--name-only", "--relative", "--diff-filter=ACMR", since]))) {
       out.add(f);
     }
   }
-  for (const f of toLines(await git(root, ["diff", "--name-only", "--diff-filter=ACMR"]))) {
+  for (const f of toLines(await git(root, ["diff", "--name-only", "--relative", "--diff-filter=ACMR"]))) {
     out.add(f);
   }
-  for (const f of toLines(await git(root, ["diff", "--name-only", "--diff-filter=ACMR", "--cached"]))) {
+  for (const f of toLines(await git(root, ["diff", "--name-only", "--relative", "--diff-filter=ACMR", "--cached"]))) {
     out.add(f);
   }
-  for (const f of toLines(await git(root, ["ls-files", "--others", "--exclude-standard"]))) {
+  for (const f of toLines(await git(root, ["ls-files", "--others", "--exclude-standard", "--", "."]))) {
     out.add(f);
   }
   return [...out].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
-// ../core/dist/report.js
-var SARIF_SCHEMA = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json";
-var INFORMATION_URI = "https://github.com/quantakrypto/tools";
+// ../core/dist/severity.js
+var SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"];
+function severityRank(s) {
+  const i = SEVERITY_ORDER.indexOf(s);
+  return i < 0 ? SEVERITY_ORDER.length : i;
+}
+function meetsThreshold(severity, threshold) {
+  return severityRank(severity) <= severityRank(threshold);
+}
 function sarifLevel(severity) {
   switch (severity) {
     case "critical":
@@ -1740,6 +1787,15 @@ function sarifLevel(severity) {
     default:
       return "note";
   }
+}
+
+// ../core/dist/report.js
+var SARIF_SCHEMA = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json";
+var INFORMATION_URI = "https://github.com/quantakrypto/tools";
+function emittedSnippet(f, redactSnippets) {
+  if (redactSnippets || f.sensitive)
+    return void 0;
+  return f.location.snippet;
 }
 function sarifRank(severity) {
   switch (severity) {
@@ -1755,7 +1811,8 @@ function sarifRank(severity) {
       return 5;
   }
 }
-function toSarif(result) {
+function toSarif(result, opts) {
+  const redactSnippets = opts?.redactSnippets ?? false;
   const ruleIndex = /* @__PURE__ */ new Map();
   const rules = [];
   const cweTaxa = /* @__PURE__ */ new Set();
@@ -1792,6 +1849,7 @@ function toSarif(result) {
       region.startColumn = f.location.column;
     if (typeof f.location.endLine === "number")
       region.endLine = f.location.endLine;
+    const snippet = emittedSnippet(f, redactSnippets);
     return {
       ruleId: f.ruleId,
       ruleIndex: ruleIndex.get(f.ruleId),
@@ -1819,7 +1877,7 @@ function toSarif(result) {
             artifactLocation: { uri: f.location.file },
             region: {
               ...region,
-              ...f.location.snippet ? { snippet: { text: f.location.snippet } } : {}
+              ...snippet ? { snippet: { text: snippet } } : {}
             }
           }
         }
@@ -1871,7 +1929,8 @@ function securitySeverity(severity) {
       return "1.0";
   }
 }
-function toJson(result) {
+function toJson(result, opts) {
+  const redactSnippets = opts?.redactSnippets ?? false;
   return {
     toolVersion: result.toolVersion,
     root: result.root,
@@ -1901,7 +1960,7 @@ function toJson(result) {
         line: f.location.line,
         column: f.location.column,
         endLine: f.location.endLine,
-        snippet: f.location.snippet
+        snippet: emittedSnippet(f, redactSnippets)
       }
     }))
   };
@@ -1962,7 +2021,7 @@ function toCbom(result) {
           executionEnvironment: "software-plain-ram",
           classicalSecurityLevel: 0,
           nistQuantumSecurityLevel: 0,
-          cryptoFunctions: g.primitive === "signature" ? ["sign", "verify"] : g.primitive === "kem" ? ["encapsulate", "decapsulate"] : g.primitive === "key-agree" ? ["keygen"] : ["other"]
+          cryptoFunctions: g.primitive === "signature" ? ["sign", "verify"] : g.primitive === "kem" ? ["encapsulate", "decapsulate"] : g.primitive === "key-agree" ? ["keyagree"] : ["other"]
         },
         quantumVulnerable: isQuantumVulnerable(g.algorithm),
         harvestNowDecryptLater: anyHndl
@@ -2007,9 +2066,36 @@ function applyBaseline2(findings, baseline) {
   const { newFindings, suppressed } = applyBaseline(findings, resolved);
   return { kept: newFindings, suppressed };
 }
+async function readBaseline(path4) {
+  const { readFile: readFile4 } = await import("node:fs/promises");
+  let raw;
+  try {
+    raw = await readFile4(path4, "utf8");
+  } catch (cause) {
+    throw new Error(`could not read baseline file "${path4}": ${errMessage(cause)}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`baseline file "${path4}" is not valid JSON: ${errMessage(cause)}`);
+  }
+  if (!isBaselineFile(parsed)) {
+    throw new Error(`baseline file "${path4}" is missing a string "fingerprints" array`);
+  }
+  return new Set(parsed.fingerprints);
+}
+function isBaselineFile(value) {
+  if (typeof value !== "object" || value === null)
+    return false;
+  const obj = value;
+  return Array.isArray(obj.fingerprints) && obj.fingerprints.every((f) => typeof f === "string");
+}
+function errMessage(cause) {
+  return cause instanceof Error ? cause.message : String(cause);
+}
 
 // ../qscan/dist/args.js
-var SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"];
 function defaultOptions() {
   return {
     path: ".",
@@ -2025,14 +2111,9 @@ function defaultOptions() {
     changed: false,
     parallel: false,
     quiet: false,
+    noSnippets: false,
     noConfigFile: false
   };
-}
-function severityRank(severity) {
-  return SEVERITY_ORDER.indexOf(severity);
-}
-function meetsThreshold(severity, threshold) {
-  return severityRank(severity) <= severityRank(threshold);
 }
 
 // ../qscan/dist/report.js
@@ -2046,69 +2127,14 @@ var COLOR = {
   green: "\x1B[32m",
   cyan: "\x1B[36m"
 };
-function renderJson(result) {
-  return JSON.stringify(serialize(() => toJson(result), result), null, 2);
+function renderJson(result, opts) {
+  return JSON.stringify(toJson(result, opts), null, 2);
 }
-function renderSarif(result) {
-  return JSON.stringify(serialize(() => toSarif(result), fallbackSarif(result)), null, 2);
+function renderSarif(result, opts) {
+  return JSON.stringify(toSarif(result, opts), null, 2);
 }
 function renderCbom(result) {
   return JSON.stringify(toCbom(result), null, 2);
-}
-function serialize(fn, fallback) {
-  try {
-    return fn();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("not implemented"))
-      return fallback;
-    throw err;
-  }
-}
-function fallbackSarif(result) {
-  return {
-    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
-    version: "2.1.0",
-    runs: [
-      {
-        tool: {
-          driver: {
-            name: "qscan",
-            informationUri: "https://github.com/quantakrypto/tools",
-            version: result.toolVersion,
-            rules: []
-          }
-        },
-        results: result.findings.map((f) => ({
-          ruleId: f.ruleId,
-          level: sarifLevel2(f.severity),
-          message: { text: f.message },
-          locations: [
-            {
-              physicalLocation: {
-                artifactLocation: { uri: f.location.file },
-                region: {
-                  startLine: f.location.line,
-                  ...f.location.column ? { startColumn: f.location.column } : {}
-                }
-              }
-            }
-          ]
-        }))
-      }
-    ]
-  };
-}
-function sarifLevel2(severity) {
-  switch (severity) {
-    case "critical":
-    case "high":
-      return "error";
-    case "medium":
-      return "warning";
-    default:
-      return "note";
-  }
 }
 function renderHuman(result, opts = {}) {
   const c = opts.color ? COLOR : PLAIN;
@@ -2234,8 +2260,8 @@ async function runQscan(opts, hooks = {}) {
   }
   let suppressed = [];
   if (options.baseline) {
-    const baseline = await loadBaseline(options.baseline);
-    const split = applyBaseline2(result.findings, baseline);
+    const fingerprints = await readBaseline(options.baseline);
+    const split = applyBaseline2(result.findings, fingerprints);
     result.findings = split.kept;
     suppressed = split.suppressed;
   }
@@ -2243,16 +2269,20 @@ async function runQscan(opts, hooks = {}) {
   return {
     result,
     suppressed,
-    report: renderReport(result, options.format, hooks.color ?? false),
+    report: renderReport(result, options.format, {
+      color: hooks.color ?? false,
+      redactSnippets: options.noSnippets
+    }),
     exitCode
   };
 }
-function renderReport(result, format, color = false) {
+function renderReport(result, format, opts = {}) {
+  const { color = false, redactSnippets = false } = typeof opts === "boolean" ? { color: opts } : opts;
   switch (format) {
     case "json":
-      return renderJson(result);
+      return renderJson(result, { redactSnippets });
     case "sarif":
-      return renderSarif(result);
+      return renderSarif(result, { redactSnippets });
     case "cbom":
       return renderCbom(result);
     case "human":
@@ -2262,6 +2292,7 @@ function renderReport(result, format, color = false) {
 }
 
 // src/io.ts
+import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { EOL } from "node:os";
 function inputEnvName(name) {
@@ -2311,10 +2342,22 @@ function warning(message, properties) {
 function error(message, properties) {
   issueCommand("error", message, properties);
 }
+function notice(message, properties) {
+  issueCommand("notice", message, properties);
+}
 function setOutput(name, value, env = process.env) {
   const filePath = env["GITHUB_OUTPUT"];
   if (filePath) {
-    const delimiter = `ghadelimiter_${name}`;
+    const delimiter = `ghadelimiter_${randomUUID()}`;
+    if (name.includes(delimiter)) {
+      throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+    }
+    if (/[\r\n]/.test(name)) {
+      throw new Error("Unexpected input: name should not contain a CR or LF character");
+    }
+    if (value.includes(delimiter)) {
+      throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+    }
     appendFileSync(filePath, `${name}<<${delimiter}${EOL}${value}${EOL}${delimiter}${EOL}`, {
       encoding: "utf8"
     });
@@ -2334,13 +2377,12 @@ function mdCell(value) {
 }
 
 // src/main.ts
-var SEVERITY_ORDER2 = ["critical", "high", "medium", "low", "info"];
 var DEFAULT_OUTPUT = "quantakrypto.sarif.json";
 function readInputs(env = process.env) {
   const severityThreshold = getInput("severity-threshold", env) || "high";
-  if (!SEVERITY_ORDER2.includes(severityThreshold)) {
+  if (!SEVERITY_ORDER.includes(severityThreshold)) {
     throw new TypeError(
-      `Invalid severity-threshold "${severityThreshold}"; expected one of ${SEVERITY_ORDER2.join(", ")}`
+      `Invalid severity-threshold "${severityThreshold}"; expected one of ${SEVERITY_ORDER.join(", ")}`
     );
   }
   const format = getInput("format", env) || "sarif";
@@ -2357,11 +2399,13 @@ function readInputs(env = process.env) {
     output: getInput("output", env) || DEFAULT_OUTPUT,
     baseline: baseline || void 0,
     commentPr: getBooleanInput("comment-pr", false, env),
-    githubToken: githubToken || void 0
+    githubToken: githubToken || void 0,
+    redactSnippets: getBooleanInput("redact-snippets", false, env)
   };
 }
-function meetsThreshold2(severity, threshold) {
-  return SEVERITY_ORDER2.indexOf(severity) <= SEVERITY_ORDER2.indexOf(threshold);
+function renderReportWithOptions(result, format, opts) {
+  const doc = format === "sarif" ? toSarif(result, opts) : toJson(result, opts);
+  return JSON.stringify(doc, null, 2);
 }
 function shouldFail(blockingCount, failOnFindings) {
   return failOnFindings && blockingCount > 0;
@@ -2373,7 +2417,7 @@ function annotationLevel(severity) {
 }
 function annotateFindings(findings, threshold) {
   for (const f of findings) {
-    const level = meetsThreshold2(f.severity, threshold) ? "error" : annotationLevel(f.severity);
+    const level = meetsThreshold(f.severity, threshold) ? "error" : annotationLevel(f.severity);
     const message = f.remediation ? `${f.message} \u2192 ${f.remediation}` : f.message;
     const props = {
       title: `quantakrypto: ${f.title}`,
@@ -2383,12 +2427,13 @@ function annotateFindings(findings, threshold) {
       endLine: f.location.endLine
     };
     if (level === "error") error(message, props);
+    else if (level === "notice") notice(message, props);
     else warning(message, props);
   }
 }
 function buildSummary(result, newFindings, threshold) {
   const score = result.inventory.readinessScore;
-  const blocking = newFindings.filter((f) => meetsThreshold2(f.severity, threshold));
+  const blocking = newFindings.filter((f) => meetsThreshold(f.severity, threshold));
   const lines = [];
   lines.push("## quantakrypto \u2014 Quantum Readiness Scan");
   lines.push("");
@@ -2455,9 +2500,12 @@ async function commentOnPullRequest(ctx, token, body) {
   }
 }
 function resolveInWorkspace(p, env) {
-  if (isAbsolute(p)) return p;
-  const workspace = env["GITHUB_WORKSPACE"] || process.cwd();
-  return join4(workspace, p);
+  const workspace = resolve(env["GITHUB_WORKSPACE"] || process.cwd());
+  const resolved = isAbsolute(p) ? resolve(p) : resolve(workspace, p);
+  if (resolved !== workspace && !resolved.startsWith(workspace + sep2)) {
+    throw new Error(`path "${p}" escapes the workspace (${workspace})`);
+  }
+  return resolved;
 }
 async function loadBaselineSet(baselinePath, env) {
   const abs = resolveInWorkspace(baselinePath, env);
@@ -2476,10 +2524,14 @@ async function run(env = process.env) {
   const { newFindings } = applyBaseline(result.findings, baseline);
   const outputPath = resolveInWorkspace(inputs.output, env);
   await mkdir(dirname3(outputPath), { recursive: true });
-  await writeFile2(outputPath, renderReport(result, inputs.format), "utf8");
+  await writeFile2(
+    outputPath,
+    renderReportWithOptions(result, inputs.format, { redactSnippets: inputs.redactSnippets }),
+    "utf8"
+  );
   info(`quantakrypto: wrote ${inputs.format} report to ${inputs.output}`);
   annotateFindings(newFindings, inputs.severityThreshold);
-  const blocking = newFindings.filter((f) => meetsThreshold2(f.severity, inputs.severityThreshold));
+  const blocking = newFindings.filter((f) => meetsThreshold(f.severity, inputs.severityThreshold));
   setOutput("findings-count", String(blocking.length), env);
   setOutput("readiness-score", String(result.inventory.readinessScore), env);
   setOutput("sarif-file", inputs.output, env);
@@ -2514,7 +2566,7 @@ export {
   buildSummary,
   commentOnPullRequest,
   fingerprintFinding as fingerprint,
-  meetsThreshold2 as meetsThreshold,
+  meetsThreshold,
   readInputs,
   readPullRequestContext,
   run,

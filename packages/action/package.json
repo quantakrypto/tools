@@ -28,6 +28,9 @@
     "@quantakrypto/core": "0.1.0",
     "@quantakrypto/qscan": "0.1.0"
   },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  },
   "scripts": {
     "build": "tsc -b",
     "bundle": "esbuild src/main.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\"",

@@ -89,6 +89,48 @@ test("parses an ML-DSA sigVer ACVP group with testPassed verdict", () => {
   }
 });
 
+test("a sigVer case with an absent testPassed verdict is skipped, not assumed valid", () => {
+  // NIST ACVP sigVer files contain intentionally-invalid signatures. If the
+  // expected verdict is missing we must NOT default it to `expected:true` —
+  // doing so would flag a conformant SUT (which correctly returns valid:false
+  // on a bad signature) as failing. The case is skipped instead.
+  const dir = tmp({
+    "dsa-sigver-noverdict.json": {
+      algorithm: "ML-DSA",
+      mode: "sigVer",
+      testGroups: [
+        {
+          parameterSet: "ML-DSA-65",
+          tests: [
+            // No testPassed at all.
+            { pk: "0011", message: "2233", signature: "4455" },
+            // Non-boolean testPassed (e.g. a stringified verdict) is also skipped.
+            { pk: "0011", message: "2233", signature: "6677", testPassed: "false" },
+            // A well-formed false verdict is still parsed.
+            { pk: "0011", message: "2233", signature: "8899", testPassed: false },
+          ],
+        },
+      ],
+    },
+  });
+  try {
+    const set = loadVectors(dir);
+    const vv = set.vectors.filter((v) => v.kind === "dsa-verify");
+    // Only the one case with a boolean verdict survives.
+    assert.equal(vv.length, 1);
+    assert.equal(vv[0]!.kind === "dsa-verify" && vv[0]!.expected, false);
+    // None of the surviving vectors were invented as expected:true.
+    assert.ok(
+      !vv.some((v) => v.kind === "dsa-verify" && v.expected === true),
+      "no case may default to expected:true",
+    );
+    // The skipped cases are surfaced as notes, not silently dropped.
+    assert.ok(set.notes.some((n) => /no boolean "testPassed"/.test(n)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("unrecognized algorithm is noted, not invented", () => {
   const dir = tmp({ "weird.json": { algorithm: "RSA", testGroups: [] } });
   try {

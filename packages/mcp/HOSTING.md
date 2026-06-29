@@ -27,9 +27,24 @@ hosted endpoint is reachable by untrusted peers. Out of the box `node dist/http.
   gate. The knowledge tools (`explain_finding`, `suggest_hybrid`, `list_rules`)
   are pure and always exposed. The gating is a pure function (`gateHttpTools`),
   unit-tested in `test/http.test.ts`.
-- **Bounds each request.** A 1 MiB request-body cap (always), a per-request tool
-  timeout (`QUANTAKRYPTO_MCP_TIMEOUT_MS`, default 30 s → `504`) and a response-size cap
-  (`QUANTAKRYPTO_MCP_MAX_RESPONSE_BYTES`, default 4 MiB → `500`).
+- **Confines the filesystem tools to a root allow-list.** When the FS tools are
+  enabled, every scanned path must resolve inside `QUANTAKRYPTO_MCP_ROOT`
+  (`:`-separated; defaults to the process CWD). `..` traversal and out-of-root
+  absolute paths are rejected (`resolveScanPath` in `src/fsconfig.ts`), so the
+  endpoint cannot be turned into an `/etc/passwd` read oracle.
+- **Validates the request `Origin`.** `POST /mcp` rejects a browser request whose
+  `Origin` host is not loopback (or in `QUANTAKRYPTO_MCP_ALLOW_ORIGIN`) with `403`,
+  blocking DNS-rebinding / localhost-CSRF against the default no-token config.
+  Requests with no `Origin` (CLI / native MCP clients) are unaffected.
+- **Bounds each request.** A 1 MiB request-body cap (`413` only on the cap; a
+  transport read error is `400`), a per-request tool timeout that **aborts the
+  in-flight scan** (`QUANTAKRYPTO_MCP_TIMEOUT_MS`, default 30 s → `504`; no
+  background work leaks past the response), a response-size cap
+  (`QUANTAKRYPTO_MCP_MAX_RESPONSE_BYTES`, default 4 MiB → `500`), and per-scan work
+  budgets (`QUANTAKRYPTO_MCP_MAX_FILES` / `QUANTAKRYPTO_MCP_MAX_BYTES`, each capped).
+- **Sanitizes error messages.** Internal failures (an `ENOENT` carrying a server
+  path, a stack trace) are logged to stderr and replaced with a generic message
+  in the wire response, so a remote caller never learns server internals.
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
@@ -37,8 +52,12 @@ hosted endpoint is reachable by untrusted peers. Out of the box `node dist/http.
 | `PORT` | `3000` | Listen port. |
 | `QUANTAKRYPTO_MCP_TOKEN` | _(unset)_ | When set, requires `Authorization: Bearer <token>`. |
 | `QUANTAKRYPTO_MCP_ALLOW_FS` | _(off)_ | `1`/`true` exposes the filesystem tools over HTTP. |
-| `QUANTAKRYPTO_MCP_TIMEOUT_MS` | `30000` | Per-request tool-execution deadline. |
+| `QUANTAKRYPTO_MCP_ROOT` | _(cwd)_ | `:`-separated allow-list of directories the FS tools may scan. |
+| `QUANTAKRYPTO_MCP_ALLOW_ORIGIN` | _(loopback)_ | Comma-separated extra `Origin` hosts allowed on `/mcp`. |
+| `QUANTAKRYPTO_MCP_TIMEOUT_MS` | `30000` | Per-request deadline; aborts the in-flight scan on timeout. |
 | `QUANTAKRYPTO_MCP_MAX_RESPONSE_BYTES` | `4194304` | Response-body size cap. |
+| `QUANTAKRYPTO_MCP_MAX_FILES` | `25000` (cap `250000`) | Max files a single scan may read. |
+| `QUANTAKRYPTO_MCP_MAX_BYTES` | `268435456` (cap 2 GiB) | Max cumulative bytes a single scan may read. |
 
 **Design choice — refuse vs. warn on a wide-open bind.** Binding to a
 non-loopback host with `QUANTAKRYPTO_MCP_TOKEN` unset is **refused** (startup fails)

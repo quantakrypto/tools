@@ -13,7 +13,7 @@
 import { changedFiles, scan, scanParallel } from "@quantakrypto/core";
 import type { Baseline, Finding, ParallelScanOptions, ScanResult } from "@quantakrypto/core";
 
-import { applyBaseline, loadBaseline, saveBaseline } from "./baseline.js";
+import { applyBaseline, readBaseline, saveBaseline } from "./baseline.js";
 import { defaultOptions, meetsThreshold } from "./args.js";
 import type { QscanOptions } from "./args.js";
 import { renderCbom, renderHuman, renderJson, renderSarif } from "./report.js";
@@ -173,10 +173,16 @@ export async function runQscan(
   }
 
   // --baseline: suppress previously-accepted findings.
+  //
+  // The explicit `--baseline <path>` is read STRICTLY via `readBaseline`: a
+  // missing or malformed file is an error (surfaced by the CLI as exit 2), not
+  // silently treated as an empty baseline. Using core's tolerant `loadBaseline`
+  // here would let a typo'd path (`--baseline typo.json`) suppress nothing and
+  // still exit 0 — a CI footgun where a broken baseline reads as "all clear".
   let suppressed: Finding[] = [];
   if (options.baseline) {
-    const baseline = await loadBaseline(options.baseline);
-    const split = applyBaseline(result.findings, baseline);
+    const fingerprints = await readBaseline(options.baseline);
+    const split = applyBaseline(result.findings, fingerprints);
     result.findings = split.kept;
     suppressed = split.suppressed;
   }
@@ -190,22 +196,36 @@ export async function runQscan(
   return {
     result,
     suppressed,
-    report: renderReport(result, options.format, hooks.color ?? false),
+    report: renderReport(result, options.format, {
+      color: hooks.color ?? false,
+      redactSnippets: options.noSnippets,
+    }),
     exitCode,
   };
+}
+
+/** Rendering controls for {@link renderReport}. */
+export interface RenderReportOptions {
+  /** Emit raw ANSI color in the human report. Default: false. */
+  color?: boolean;
+  /** Omit code snippets from the JSON/SARIF report (`--no-snippets`). */
+  redactSnippets?: boolean;
 }
 
 /** Render a scan result in the requested format. */
 export function renderReport(
   result: ScanResult,
   format: QscanOptions["format"],
-  color = false,
+  opts: RenderReportOptions | boolean = {},
 ): string {
+  // Back-compat: `renderReport(result, format, true)` used to mean "color on".
+  const { color = false, redactSnippets = false } =
+    typeof opts === "boolean" ? { color: opts } : opts;
   switch (format) {
     case "json":
-      return renderJson(result);
+      return renderJson(result, { redactSnippets });
     case "sarif":
-      return renderSarif(result);
+      return renderSarif(result, { redactSnippets });
     case "cbom":
       return renderCbom(result);
     case "human":

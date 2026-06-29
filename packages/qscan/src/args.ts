@@ -8,10 +8,14 @@
  * path. Unknown flags are a usage error.
  */
 
+import { meetsThreshold, SEVERITY_ORDER, severityRank } from "@quantakrypto/core";
 import type { ReportFormat, Severity } from "@quantakrypto/core";
 
-/** Severities ordered most → least severe; index 0 is the most severe. */
-export const SEVERITY_ORDER: readonly Severity[] = ["critical", "high", "medium", "low", "info"];
+// Severity ordering, ranking, and threshold logic are the monorepo's single
+// source of truth in `@quantakrypto/core`. Re-export them here so existing
+// `@quantakrypto/qscan` callers (and tests) keep importing them from `./args.js`
+// without qScan maintaining a second, drift-prone copy.
+export { meetsThreshold, SEVERITY_ORDER, severityRank };
 
 /**
  * Output formats qScan accepts on the command line. Extends core's
@@ -71,6 +75,12 @@ export interface QscanOptions {
   writeBaseline?: string;
   /** Suppress the human summary banner (still writes reports/output files). */
   quiet: boolean;
+  /**
+   * Omit code snippets from the JSON/SARIF report (`--no-snippets`). Passed to
+   * core's reporters as `{ redactSnippets: true }`. Snippets of `sensitive`
+   * findings are always omitted regardless of this flag.
+   */
+  noSnippets: boolean;
   /**
    * Explicit path to a `quantakrypto.config.json` (`--config <path>`). Overrides
    * auto-discovery at the scan root. Distinct from `--no-config`, which toggles
@@ -134,6 +144,7 @@ export function defaultOptions(): QscanOptions {
     changed: false,
     parallel: false,
     quiet: false,
+    noSnippets: false,
     noConfigFile: false,
   };
 }
@@ -172,6 +183,17 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       return next;
     };
 
+    /**
+     * Reject an inline `=value` on a boolean flag. Without this, `--quiet=false`
+     * would silently ignore the value and turn the flag ON — the opposite of the
+     * caller's intent. Boolean flags take no value, so any `=value` is an error.
+     */
+    const rejectInlineValue = (): void => {
+      if (inlineValue !== undefined) {
+        throw new ArgError(`option "${flag}" is a boolean flag and takes no value`);
+      }
+    };
+
     switch (flag) {
       case "-h":
       case "--help":
@@ -184,6 +206,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         options.format = asFormat(takeValue());
         break;
       case "--cbom":
+        rejectInlineValue();
         options.format = "cbom";
         break;
       case "-o":
@@ -196,14 +219,17 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         break;
 
       case "--no-source":
+        rejectInlineValue();
         options.source = false;
         explicit.add("source");
         break;
       case "--no-deps":
+        rejectInlineValue();
         options.dependencies = false;
         explicit.add("dependencies");
         break;
       case "--no-config":
+        rejectInlineValue();
         options.config = false;
         explicit.add("config");
         break;
@@ -221,10 +247,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         explicit.add("maxFileSize");
         break;
       case "--no-default-ignores":
+        rejectInlineValue();
         options.noDefaultIgnores = true;
         explicit.add("noDefaultIgnores");
         break;
       case "--scan-minified":
+        rejectInlineValue();
         options.scanMinified = true;
         explicit.add("scanMinified");
         break;
@@ -235,10 +263,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         options.configFile = takeValue();
         break;
       case "--no-config-file":
+        rejectInlineValue();
         options.noConfigFile = true;
         break;
 
       case "--changed":
+        rejectInlineValue();
         options.changed = true;
         break;
       case "--since":
@@ -247,12 +277,19 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         break;
 
       case "--parallel":
+        rejectInlineValue();
         options.parallel = true;
         break;
-      case "--concurrency":
-        options.concurrency = asInt(takeValue(), "--concurrency");
-        options.parallel = true; // an explicit worker count implies parallel
+      case "--concurrency": {
+        const n = asInt(takeValue(), "--concurrency");
+        options.concurrency = n;
+        // `--concurrency 0` documents "serial": core treats <1 as "auto" (full
+        // parallelism), so without this special-case 0 would do the OPPOSITE of
+        // what's documented. 0 forces the in-process serial path; any value >= 1
+        // implies parallel.
+        options.parallel = n >= 1;
         break;
+      }
 
       case "--baseline":
         options.baseline = takeValue();
@@ -262,7 +299,12 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
         options.writeBaseline = takeValue();
         break;
       case "--quiet":
+        rejectInlineValue();
         options.quiet = true;
+        break;
+      case "--no-snippets":
+        rejectInlineValue();
+        options.noSnippets = true;
         break;
 
       default:
@@ -301,20 +343,4 @@ export function asInt(value: string, flag: string): number {
 export function asSeverity(value: string): Severity {
   if ((SEVERITY_ORDER as readonly string[]).includes(value)) return value as Severity;
   throw new ArgError(`invalid severity "${value}" (expected one of: ${SEVERITY_ORDER.join(", ")})`);
-}
-
-/**
- * Rank a severity: lower number = more severe.
- * `critical` → 0, `info` → 4.
- */
-export function severityRank(severity: Severity): number {
-  return SEVERITY_ORDER.indexOf(severity);
-}
-
-/**
- * Whether `severity` is at or above `threshold` in seriousness.
- * E.g. `high` meets a `medium` threshold; `low` does not.
- */
-export function meetsThreshold(severity: Severity, threshold: Severity): boolean {
-  return severityRank(severity) <= severityRank(threshold);
 }

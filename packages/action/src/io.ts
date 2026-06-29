@@ -9,6 +9,7 @@
  * https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions
  */
 
+import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { EOL } from "node:os";
 
@@ -138,15 +139,32 @@ export function notice(message: string, properties?: AnnotationProperties): void
 }
 
 /**
- * Set an action output. On a runner this appends `name<<EOF\nvalue\nEOF` to the
- * file named by `$GITHUB_OUTPUT`. With no such file (local/test runs) it falls
- * back to a deprecated-but-harmless stdout command so callers still see it.
+ * Set an action output. On a runner this appends `name<<DELIM\nvalue\nDELIM` to
+ * the file named by `$GITHUB_OUTPUT`. With no such file (local/test runs) it
+ * falls back to a deprecated-but-harmless stdout command so callers still see it.
+ *
+ * The heredoc delimiter is a fresh `ghadelimiter_<random-uuid>` per call (as in
+ * `@actions/core`) so the value cannot contain a line that matches it. We also
+ * reject a `name`/`value` that embeds the delimiter or a stray CR/LF in the
+ * name: without this a crafted value could forge a closing delimiter and then a
+ * second `other-output<<…` heredoc, injecting arbitrary step outputs.
  */
 export function setOutput(name: string, value: string, env: NodeJS.ProcessEnv = process.env): void {
   const filePath = env["GITHUB_OUTPUT"];
   if (filePath) {
-    // Heredoc form is required for values that may contain newlines.
-    const delimiter = `ghadelimiter_${name}`;
+    // Fresh, unpredictable delimiter per call — a value cannot pre-guess it.
+    const delimiter = `ghadelimiter_${randomUUID()}`;
+    // Defense in depth: even with a random delimiter, refuse input that could
+    // forge it or break the heredoc framing (matching @actions/core).
+    if (name.includes(delimiter)) {
+      throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+    }
+    if (/[\r\n]/.test(name)) {
+      throw new Error("Unexpected input: name should not contain a CR or LF character");
+    }
+    if (value.includes(delimiter)) {
+      throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+    }
     appendFileSync(filePath, `${name}<<${delimiter}${EOL}${value}${EOL}${delimiter}${EOL}`, {
       encoding: "utf8",
     });
