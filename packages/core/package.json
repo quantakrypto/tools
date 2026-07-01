@@ -4,14 +4,14 @@
   "description": "Shared post-quantum readiness library: crypto detectors, vulnerable-dependency database, inventory + SARIF reporting. Zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
-  "homepage": "https://github.com/quantakrypto/tools/tree/main/packages/core#readme",
+  "homepage": "https://github.com/quantakrypto/pqc-tools/tree/main/packages/core#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/quantakrypto/tools.git",
+    "url": "git+https://github.com/quantakrypto/pqc-tools.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/quantakrypto/tools/issues"
+    "url": "https://github.com/quantakrypto/pqc-tools/issues"
   },
   "type": "module",
   "main": "./dist/index.js",

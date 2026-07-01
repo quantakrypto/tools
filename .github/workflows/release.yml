@@ -11,7 +11,7 @@
 #   2. Bump the package versions, then either publish a GitHub Release or run
 #      this workflow manually with confirm = "publish".
 # The @quantakrypto/action package is distributed as a GitHub Action via
-# `uses: quantakrypto/tools/packages/action@v1` (its dist/ is committed and
+# `uses: quantakrypto/pqc-tools/packages/action@v1` (its dist/ is committed and
 # kept fresh by the `action dist is fresh` CI gate), so it is NOT published to
 # npm — see the commented step at the end of the publish job.
 name: Release
@@ -89,7 +89,7 @@ jobs:
       # signed Sigstore attestation via the id-token OIDC token, shown on npm.
       #
       # NOTE: @quantakrypto/action is marked "private" and is skipped here — it
-      # ships as a GitHub Action via `uses: quantakrypto/tools/packages/action@v1`
+      # ships as a GitHub Action via `uses: quantakrypto/pqc-tools/packages/action@v1`
       # (dist committed + kept fresh by the "action dist is fresh" CI gate), not npm.
       - name: Publish to npm (skip versions already published)
         env:

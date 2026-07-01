@@ -496,7 +496,7 @@ ignores `dist/`, and `git ls-files` shows **0 tracked `dist/` files**. But a
 `node20` JavaScript GitHub Action runs `dist/main.js` **directly from the
 checked-out ref** — there is no build step on the runner. The root README tells
 users to consume it as
-`uses: quantakrypto/tools/packages/action@v1`
+`uses: quantakrypto/pqc-tools/packages/action@v1`
 (root `README.md` table), which **will fail** at that ref because
 `packages/action/dist/main.js` won't exist.
 

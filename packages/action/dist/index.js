@@ -1802,7 +1802,7 @@ function sarifLevel(severity) {
 
 // ../core/dist/report.js
 var SARIF_SCHEMA = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json";
-var INFORMATION_URI = "https://github.com/quantakrypto/tools";
+var INFORMATION_URI = "https://github.com/quantakrypto/pqc-tools";
 function emittedSnippet(f, redactSnippets) {
   if (redactSnippets || f.sensitive)
     return void 0;

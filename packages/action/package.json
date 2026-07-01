@@ -4,14 +4,14 @@
   "description": "quantakrypto Action — fail CI when new quantum-vulnerable cryptography lands. GitHub Action wrapping qScan.",
   "license": "Apache-2.0",
   "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
-  "homepage": "https://github.com/quantakrypto/tools/tree/main/packages/action#readme",
+  "homepage": "https://github.com/quantakrypto/pqc-tools/tree/main/packages/action#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/quantakrypto/tools.git",
+    "url": "git+https://github.com/quantakrypto/pqc-tools.git",
     "directory": "packages/action"
   },
   "bugs": {
-    "url": "https://github.com/quantakrypto/tools/issues"
+    "url": "https://github.com/quantakrypto/pqc-tools/issues"
   },
   "type": "module",
   "private": true,

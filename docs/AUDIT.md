@@ -115,7 +115,7 @@ gets fully scanned (see §3).
   unused-var lint; the seeding it claims to guard is done inline above. Remove.
 - SARIF `informationUri` previously diverged across the codebase (three
   different repo URLs for one project). It is now unified to the canonical
-  repository `https://github.com/quantakrypto/tools` in both `core` (`report.ts:19`)
+  repository `https://github.com/quantakrypto/pqc-tools` in both `core` (`report.ts:19`)
   and qscan's fallback SARIF (`qscan/src/report.ts`), matching the README.
 
 ### 2.2 `@quantakrypto/qscan`

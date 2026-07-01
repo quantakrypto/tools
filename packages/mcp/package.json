@@ -4,14 +4,14 @@
   "description": "quantakrypto MCP — post-quantum readiness for AI coding agents via the Model Context Protocol. Zero runtime dependencies (stdio JSON-RPC implemented in-house).",
   "license": "Apache-2.0",
   "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
-  "homepage": "https://github.com/quantakrypto/tools/tree/main/packages/mcp#readme",
+  "homepage": "https://github.com/quantakrypto/pqc-tools/tree/main/packages/mcp#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/quantakrypto/tools.git",
+    "url": "git+https://github.com/quantakrypto/pqc-tools.git",
     "directory": "packages/mcp"
   },
   "bugs": {
-    "url": "https://github.com/quantakrypto/tools/issues"
+    "url": "https://github.com/quantakrypto/pqc-tools/issues"
   },
   "type": "module",
   "bin": {

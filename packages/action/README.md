@@ -31,7 +31,7 @@ jobs:
 
       - name: quantakrypto — Quantum Readiness Scan
         id: quantakrypto
-        uses: quantakrypto/tools/packages/action@v1
+        uses: quantakrypto/pqc-tools/packages/action@v1
         with:
           path: "."
           severity-threshold: "high"

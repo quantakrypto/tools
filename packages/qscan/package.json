@@ -4,14 +4,14 @@
   "description": "qScan — find quantum-vulnerable cryptography in any codebase (CLI). Zero runtime dependencies.",
   "license": "Apache-2.0",
   "author": "Dandelion Labs <hello@dandelionlabs.io> (https://dandelionlabs.io)",
-  "homepage": "https://github.com/quantakrypto/tools/tree/main/packages/qscan#readme",
+  "homepage": "https://github.com/quantakrypto/pqc-tools/tree/main/packages/qscan#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/quantakrypto/tools.git",
+    "url": "git+https://github.com/quantakrypto/pqc-tools.git",
     "directory": "packages/qscan"
   },
   "bugs": {
-    "url": "https://github.com/quantakrypto/tools/issues"
+    "url": "https://github.com/quantakrypto/pqc-tools/issues"
   },
   "type": "module",
   "bin": {

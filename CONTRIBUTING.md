@@ -19,7 +19,7 @@ contributions are welcome.
 Requires Node ≥ 20.
 
 ```bash
-git clone git@github.com:quantakrypto/tools.git
+git clone git@github.com:quantakrypto/pqc-tools.git
 cd quantakrypto-tools
 npm install        # links the workspaces
 npm run build      # tsc --build (project references)

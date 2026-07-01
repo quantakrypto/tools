@@ -28,7 +28,7 @@ export interface ReportOptions {
 const SARIF_SCHEMA =
   "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json";
 
-const INFORMATION_URI = "https://github.com/quantakrypto/tools";
+const INFORMATION_URI = "https://github.com/quantakrypto/pqc-tools";
 
 /**
  * Resolve the snippet to emit for a finding, honouring redaction. Sensitive

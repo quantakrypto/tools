@@ -1,6 +1,6 @@
 # quantakrypto-tools
 
-[![CI](https://github.com/quantakrypto/tools/actions/workflows/ci.yml/badge.svg)](https://github.com/quantakrypto/tools/actions/workflows/ci.yml)
+[![CI](https://github.com/quantakrypto/pqc-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/quantakrypto/pqc-tools/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![npm @quantakrypto/qscan](https://img.shields.io/npm/v/@quantakrypto/qscan?label=%40quantakrypto%2Fqscan)](https://www.npmjs.com/package/@quantakrypto/qscan)
 [![npm @quantakrypto/mcp](https://img.shields.io/npm/v/@quantakrypto/mcp?label=%40quantakrypto%2Fmcp)](https://www.npmjs.com/package/@quantakrypto/mcp)
@@ -25,7 +25,7 @@ with **zero runtime dependencies** (Node built-ins only).
 | **[qScan](packages/qscan)** (`@quantakrypto/qscan`) | CLI that finds quantum-vulnerable crypto (RSA, (EC)DH, ECDSA, EdDSA, …) in any codebase and prints a readiness score. SARIF / JSON / CBOM output, baselines, incremental & parallel scans. | `npx @quantakrypto/qscan ./` |
 | **[MCP](packages/mcp)** (`@quantakrypto/mcp`) | Model Context Protocol server that gives AI coding agents post-quantum readiness tools (scan, inventory, explain, suggest-hybrid, CBOM). Local stdio + hostable HTTP. | `claude mcp add quantakrypto npx @quantakrypto/mcp` |
 | **[Sieve](packages/sieve)** (`@quantakrypto/sieve`) | Conformance battery for ML-KEM (FIPS 203), ML-DSA (FIPS 204), and SLH-DSA (FIPS 205) implementations, driven over a JSON stdin/stdout protocol. | `npx @quantakrypto/sieve --help` |
-| **[Action](packages/action)** (`@quantakrypto/action`) | GitHub Action that runs qScan in CI, uploads SARIF, annotates the diff, and fails the build only on **new** quantum-vulnerable crypto. | `uses: quantakrypto/tools/packages/action@v1` |
+| **[Action](packages/action)** (`@quantakrypto/action`) | GitHub Action that runs qScan in CI, uploads SARIF, annotates the diff, and fails the build only on **new** quantum-vulnerable crypto. | `uses: quantakrypto/pqc-tools/packages/action@v1` |
 
 All three of qScan, MCP, and the Action share the engine in
 **[`@quantakrypto/core`](packages/core)** (`npm i @quantakrypto/core`) — detectors,
@@ -50,7 +50,7 @@ Add the CI gate by dropping
 into `.github/workflows/`, or wire it up directly:
 
 ```yaml
-- uses: quantakrypto/tools/packages/action@v1
+- uses: quantakrypto/pqc-tools/packages/action@v1
   with:
     path: "."
     severity-threshold: "high"
